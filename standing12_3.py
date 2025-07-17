@@ -164,3 +164,5 @@ except Exception as exc:
     # Reset active version to default
     ReleaseVersion.reset()
     raise(exc)
+
+# this is a second test comment to check git commit from macbook 
