@@ -19,6 +19,9 @@ def CreateModel():
 	from s4l_v1.model import Vec3
 
 	wire = model.CreateWireBlock(p0=Vec3(0,0,0), p1=Vec3(100, 100, 100), parametrized=True)
+	block1 = model.CreateSolidBlock(p0=Vec3(10,10,10), p1=Vec3(90, 90, 90), parametrized=True)
+	block1.Name = 'Vaturle Muscle Block'  # モデルブロックの名前を変更
+
 	wire.Name = 'Plane Wave Source'
 
 def CreateSimulation():
@@ -26,7 +29,8 @@ def CreateSimulation():
 	# retrieve needed entities from model
 	entities = model.AllEntities()
 
-	source_box = entities['Plane Wave Source']
+	entity__wire_block1 = entities['Plane Wave Source']
+	entity__tissue = entities['Muscle Block']  # モデルブロックを取得
 
 	sim = fdtd.Simulation()
 
@@ -38,13 +42,13 @@ def CreateSimulation():
 	# Materials:
 	# Adding a new MaterialSettings for Muscle
 	material_settings_muscle = fdtd.MaterialSettings()
-	components_muscle = [source_box]  # ワイヤブロックをターゲットにする
+	components_muscle = [entity__tissue]  # ワイヤブロックをターゲットにする
 	mat_muscle = database["IT'IS 4.1"]["Muscle"]
 	if mat_muscle is not None:
 		sim.LinkMaterialWithDatabase(material_settings_muscle, mat_muscle)
 	else:
 		print("Warning: 'Muscle' material not found in database. Using fallback values.")
-		aterial_settings_muscle.Name = "Muscle"
+		material_settings_muscle.Name = "Muscle"
 		material_settings_muscle.MassDensity = 1090.4, Unit("kg/m^3")
 		material_settings_muscle.ElectricProps.Conductivity = 0.9782042083052804, Unit("S/m")
 		material_settings_muscle.ElectricProps.RelativePermittivity = 54.81107626413944
@@ -52,7 +56,7 @@ def CreateSimulation():
 	# No materials
 
 	# Sources
-	planesrc_settings = sim.AddPlaneWaveSourceSettings(source_box)
+	planesrc_settings = sim.AddPlaneWaveSourceSettings(entity__wire_block1)
 	options = planesrc_settings.ExcitationType.enum
 	planesrc_settings.ExcitationType = options.Harmonic
 	planesrc_settings.CenterFrequency = 1., units.GHz
@@ -65,12 +69,33 @@ def CreateSimulation():
 	sim.GlobalBoundarySettings.GlobalBoundaryType = options.UpmlCpml
 
 	# Grid
-	manual_grid_settings = sim.AddManualGridSettings([source_box])
+	# AutomaticGridSettings "Automatic"
+	# sim.AllSettings の中にあるすべての設定オブジェクトを調べ、その中で、fdtd.AutomaticGridSettings のインスタンスであり、
+	# かつ、その Name 属性が "Automatic" であるものだけを抽出し、それらを要素とする新しいリストを作成する。
+	automatic_grid_settings = [x for x in sim.AllSettings if isinstance(x, fdtd.AutomaticGridSettings) and x.Name == "Automatic"][0]
+	#全てのtissueエンティティとwire_block1をグリッドコンポーネントとして追加
+	components_grid = [entity__tissue, entity__wire_block1]
+	# 既存の自動グリッド設定にコンポーネントを追加
+	sim.Add(automatic_grid_settings, components_grid)
+	
+	"""" 
+	# Grid
+	# ManualGridSettings "Manual"
+	manual_grid_settings = sim.AddManualGridSettings([entity__wire_block1])
 	manual_grid_settings.MaxStep = (9.0,)*3 # model units
 	manual_grid_settings.Resolution = (2.0,)*3  # model units
+	"""
+	   # Voxels
+    # AutomaticVoxelerSettings "Automatic Voxeler Settings"
+	automatic_voxeler_settings = [x for x in sim.AllSettings if isinstance(x, fdtd.AutomaticVoxelerSettings) and x.Name == "Automatic Voxeler Settings"][0]
+    # 全てのtissueエンティティとwire_block1をボクセラーコンポーネントとして追加
+	components_voxeler = components_grid # グリッドと同じコンポーネントリストを使用
+	sim.Add(automatic_voxeler_settings, components_voxeler)
 
+	""""
 	# Voxels
-	auto_voxel_settings = sim.AddAutomaticVoxelerSettings(source_box)
+	auto_voxel_settings = sim.AddAutomaticVoxelerSettings(entity__wire_block1)
+	"""
 
 	# Solver settings
 	options = sim.SolverSettings.Kernel.enum
