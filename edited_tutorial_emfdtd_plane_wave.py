@@ -68,6 +68,7 @@ def CreateSimulation():
 	options = sim.GlobalBoundarySettings.GlobalBoundaryType.enum
 	sim.GlobalBoundarySettings.GlobalBoundaryType = options.UpmlCpml
 
+
 	# Grid
 	# AutomaticGridSettings "Automatic"
 	# sim.AllSettings の中にあるすべての設定オブジェクトを調べ、その中で、fdtd.AutomaticGridSettings のインスタンスであり、
