@@ -20,7 +20,7 @@ def CreateModel():
 
 	wire = model.CreateWireBlock(p0=Vec3(0,0,0), p1=Vec3(100, 100, 100), parametrized=True)
 	block1 = model.CreateSolidBlock(p0=Vec3(10,10,10), p1=Vec3(90, 90, 90), parametrized=True)
-	block1.Name = 'Vaturle Muscle Block'  # モデルブロックの名前を変更
+	block1.Name = 'Muscle Block'  # モデルブロックの名前を変更
 
 	wire.Name = 'Plane Wave Source'
 
