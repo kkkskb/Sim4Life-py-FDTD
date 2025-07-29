@@ -228,41 +228,135 @@ def Analyze_EM_E(sim):
 	document.AllAlgorithms.Add( slice_field_viewer_efield )
 
 def Analyze_WBSAR(sim):
-    # Create extractor for a given simulation output file
-    results = sim.Results()
+    """
+    指定されたシミュレーションの結果を解析し、
+    「Volume Weighted Average」SAR値を抽出し表示します。
+    """
+    import json # JSONデータを扱うためにjsonモジュールをインポート
 
+    results = sim.Results()
+    print(f"Analysis results for: {sim.Name}")
     print(results)
 
-    # Em sensor extractor (元のoverall_field_sensorを流用)
     em_sensor_extractor = results[ 'Overall Field' ]
-    em_sensor_extractor.FrequencySettings.ExtractedFrequency = u"All" # 全周波数で抽出
-    document.AllAlgorithms.Add( em_sensor_extractor ) # S4Lドキュメントにアルゴリズムを追加
+    em_sensor_extractor.FrequencySettings.ExtractedFrequency = u"All"
+    document.AllAlgorithms.Add( em_sensor_extractor )
 
-    # Adding a new StatisticsEvaluator for SAR
-    # SAR(x,y,z,f0) を入力としてStatisticsEvaluatorを作成
     inputs_for_statistics = [em_sensor_extractor.Outputs["SAR(x,y,z,f0)"]]
     statistics_evaluator = analysis_core.StatisticsEvaluator(inputs=inputs_for_statistics)
-    
-    # 統計評価モードを設定
-    statistics_evaluator.Mode = u"Value" # SAR値そのものを評価
-    # 属性を更新
+    statistics_evaluator.Mode = u"Value"
     statistics_evaluator.UpdateAttributes()
-    # S4Lドキュメントにアルゴリズムを追加
     document.AllAlgorithms.Add( statistics_evaluator )
+    
+    # 統計評価アルゴリズムの計算を強制的に実行
+    # Update() が False を返す場合、計算に失敗したことを示す
+    if not statistics_evaluator.Update(): # Update()の戻り値で計算成功をチェック
+        print(f"DEBUG: StatisticsEvaluator '{statistics_evaluator.Name}' failed to update/compute. Cannot extract SAR statistics.")
+        return # 計算に失敗したため、処理を中断
 
-    # Adding a new DataTableHTMLViewer
-    inputs_for_html_viewer = [statistics_evaluator.Outputs["SAR Statistics"]] # StatisticsEvaluatorの出力を入力とする
+    # --- ここからが修正箇所：Volume Weighted Average の値を取得 ---
+
+    # 1. StatisticsEvaluatorの「SAR Statistics」出力（AlgorithmOutputオブジェクト）を取得
+    sar_statistics_output_ref = statistics_evaluator.Outputs["SAR Statistics"]
+
+    # 2. AlgorithmOutputオブジェクトの .Data プロパティを使って、JsonDataObjectを取得
+    json_data_object = sar_statistics_output_ref.Data
+
+    # デバッグ: 取得したオブジェクトの型を確認
+    print(f"DEBUG: Type of json_data_object: {type(json_data_object)}")
+    
+    # --- ここから JsonDataObject のプロパティをデバッグ出力 ---
+    print("\n--- DEBUG: Inspecting JsonDataObject Properties ---")
+    
+    # DataJson プロパティの確認
+    if hasattr(json_data_object, 'DataJson'):
+        print(f"DEBUG: json_data_object.DataJson type: {type(json_data_object.DataJson)}")
+        print(f"DEBUG: json_data_object.DataJson content (first 300 chars): {str(json_data_object.DataJson)[:300]}...")
+    else:
+        print("DEBUG: json_data_object has no 'DataJson' attribute.")
+
+    # AttributeJson プロパティの確認
+    if hasattr(json_data_object, 'AttributeJson'):
+        print(f"DEBUG: json_data_object.AttributeJson type: {type(json_data_object.AttributeJson)}")
+        print(f"DEBUG: json_data_object.AttributeJson content (first 300 chars): {str(json_data_object.AttributeJson)[:300]}...")
+    else:
+        print("DEBUG: json_data_object has no 'AttributeJson' attribute.")
+
+    # keys() メソッドの確認 (辞書のように振る舞うか)
+    if hasattr(json_data_object, 'keys') and callable(json_data_object.keys):
+        try:
+            print(f"DEBUG: json_data_object.keys(): {list(json_data_object.keys())}")
+            # もしキーがあれば、最初のキーでアクセスを試みる
+            if list(json_data_object.keys()):
+                first_key = list(json_data_object.keys())[0]
+                print(f"DEBUG: Accessing first key '{first_key}': {json_data_object[first_key]}")
+        except Exception as e:
+            print(f"DEBUG: Error calling json_data_object.keys() or accessing by key: {e}") #これが出力された。よって keys() メソッドは存在するが、辞書のように振る舞わない可能性がある
+    else:
+        print("DEBUG: json_data_object has no 'keys()' method.")
+
+    print("--- DEBUG: End JsonDataObject Inspection ---\n")
+    # --- デバッグ出力ここまで ---
+
+    # --- 新しいデータ抽出ロジック: DataJsonからの直接抽出 ---
+    volume_weighted_average_value = None
+
+	# JsonDataObjectがDataJson属性を持ち、文字列であることを確認
+    if hasattr(json_data_object, 'DataJson') and isinstance(json_data_object.DataJson, str):
+        try:
+            # DataJson文字列をPythonオブジェクト（辞書）にパース
+            parsed_data = json.loads(json_data_object.DataJson)
+            print("DEBUG: Successfully parsed DataJson string.") # これが出力された。よってパースは成功している。
+
+            # デバッグ出力から判明したネストされた構造をたどる
+            # {"simple_data_collection":{"data_collection":{"Average":{"data":[VALUE]...
+            if "simple_data_collection" in parsed_data and \
+               "data_collection" in parsed_data["simple_data_collection"] and \
+               "Average" in parsed_data["simple_data_collection"]["data_collection"] and \
+               "data" in parsed_data["simple_data_collection"]["data_collection"]["Average"] and \
+               isinstance(parsed_data["simple_data_collection"]["data_collection"]["Average"]["data"], list) and \
+               len(parsed_data["simple_data_collection"]["data_collection"]["Average"]["data"]) > 0:
+                
+                volume_weighted_average_value = parsed_data["simple_data_collection"]["data_collection"]["Average"]["data"][0]
+                print("DEBUG: Extracted Volume Weighted Average value from nested dictionary.") # これが出力された。よって値の抽出は成功している。
+            else:
+                print("DEBUG: Could not find 'Volume Weighted Average' data in expected nested structure.")
+
+        except json.JSONDecodeError as e:
+            print(f"ERROR: Failed to decode DataJson string: {e}")
+        except Exception as e:
+            print(f"ERROR: An unexpected error occurred during data extraction from parsed DataJson: {e}")
+    else:
+        print("ERROR: JsonDataObject has no 'DataJson' attribute or 'DataJson' is not a string. Cannot extract value.")
+
+    # 最終的な値が取得できたか確認
+    if volume_weighted_average_value is not None:
+        print(f"Volume Weighted Average for simulation '{sim.Name}': {volume_weighted_average_value} W/kg")
+        
+        # これで 'volume_weighted_average_value' 変数に目的の値が格納されました。
+        # この値を後続の処理やファイルへの書き出しなどに使用できます。
+    else:
+        print(f"WARNING: 'Volume Weighted Average' not found in SAR Statistics data for {sim.Name} using direct access methods.")
+
+    # --- ここまでが追加コード ---
+
+    # --- DataTableHTMLViewerの初期化と追加 ---
+    # 新しいDataTableHTMLViewerを追加
+    # ここでは、元のstatistics_evaluatorの出力をそのまま使用します。
+    # HTMLビューアはJsonDataObjectを直接表示できる場合が多いです。
+    inputs_for_html_viewer = [statistics_evaluator.Outputs["SAR Statistics"]] 
     data_table_html_viewer = viewers.DataTableHTMLViewer(inputs=inputs_for_html_viewer)
     
     # 属性を更新
     data_table_html_viewer.UpdateAttributes()
-    # S4Lドキュメントにアルゴリズムを追加
+    # S4Lドキュメントに追加
     document.AllAlgorithms.Add(data_table_html_viewer)
+
 
 # --- ここから、元のRunSingleSimulation関数 ---
 def RunSingleSimulation():
 
-	#document.New() # Create a new document
+	document.New() # Create a new document
 
 	CreateModel() # Create model entities
 
@@ -289,7 +383,7 @@ def RunMultiplePlaneWaveSimulations():
 	"""
 	print("--- Starting Multiple Simulations ---")
 	# Create a new S4L document
-	#document.New()
+	document.New()
 
 	# Create model entities once
 	# This ensures the same model is used across all simulations.
@@ -343,7 +437,7 @@ def RunMultiplePlaneWaveSimulations():
 	print("\n--- Simulation Analysis Phase ---")
 	# Analyze results for all simulations
 	for sim_to_analyze in created_simulations:
-		AnalyzeSimulation(sim_to_analyze)
+		Analyze_WBSAR(sim_to_analyze)
 	print("All simulations analyzed.")
 	print("--- Multiple Simulations Finished ---")
 
@@ -354,10 +448,10 @@ def main(data_path=None, project_dir=None):
 	print("Running in:", os.getcwd(), "@", os.environ.get('COMPUTERNAME', 'Unknown'))
 
 	# --- 単一シミュレーションの実行 ---
-	#RunSingleSimulation()
+	RunSingleSimulation()
 
 	# --- 複数シミュレーションの実行 ---
-	RunMultiplePlaneWaveSimulations()
+	#RunMultiplePlaneWaveSimulations()
 
 	# --- 以下のコードは、プロジェクトディレクトリの作成と保存を行うためのもの ---
 	"""
