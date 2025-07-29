@@ -8,6 +8,7 @@ import s4l_v1.model as model
 import s4l_v1.simulation.emfdtd as fdtd
 import s4l_v1.analysis as analysis
 import s4l_v1.analysis.viewers as viewers
+import s4l_v1.analysis.core as analysis_core
 #import s4l_v1.materials.database as database # <-- 追加: 材料データベースのインポート
 
 import s4l_v1.units as units
@@ -198,7 +199,7 @@ def CreateSimulation():
 
 	return sim
 
-def AnalyzeSimulation(sim):
+def Analyze_EM_E(sim):
 	"""
 	Analyzes the results of the specified simulation and adds viewers.
 	"""
@@ -226,15 +227,47 @@ def AnalyzeSimulation(sim):
 	# ビューアをS4Lドキュメントのアルゴリズムとして追加
 	document.AllAlgorithms.Add( slice_field_viewer_efield )
 
+def Analyze_WBSAR(sim):
+    # Create extractor for a given simulation output file
+    results = sim.Results()
+
+    print(results)
+
+    # Em sensor extractor (元のoverall_field_sensorを流用)
+    em_sensor_extractor = results[ 'Overall Field' ]
+    em_sensor_extractor.FrequencySettings.ExtractedFrequency = u"All" # 全周波数で抽出
+    document.AllAlgorithms.Add( em_sensor_extractor ) # S4Lドキュメントにアルゴリズムを追加
+
+    # Adding a new StatisticsEvaluator for SAR
+    # SAR(x,y,z,f0) を入力としてStatisticsEvaluatorを作成
+    inputs_for_statistics = [em_sensor_extractor.Outputs["SAR(x,y,z,f0)"]]
+    statistics_evaluator = analysis_core.StatisticsEvaluator(inputs=inputs_for_statistics)
+    
+    # 統計評価モードを設定
+    statistics_evaluator.Mode = u"Value" # SAR値そのものを評価
+    # 属性を更新
+    statistics_evaluator.UpdateAttributes()
+    # S4Lドキュメントにアルゴリズムを追加
+    document.AllAlgorithms.Add( statistics_evaluator )
+
+    # Adding a new DataTableHTMLViewer
+    inputs_for_html_viewer = [statistics_evaluator.Outputs["SAR Statistics"]] # StatisticsEvaluatorの出力を入力とする
+    data_table_html_viewer = viewers.DataTableHTMLViewer(inputs=inputs_for_html_viewer)
+    
+    # 属性を更新
+    data_table_html_viewer.UpdateAttributes()
+    # S4Lドキュメントにアルゴリズムを追加
+    document.AllAlgorithms.Add(data_table_html_viewer)
+
 # --- ここから、元のRunSingleSimulation関数 ---
 def RunSingleSimulation():
 
 	#document.New() # Create a new document
 
-	#CreateModel() # Create model entities
+	CreateModel() # Create model entities
 
 	# Create a single simulation instance with default angles
-	sim = _create_single_simulation_instance('Plane Wave Simulation', 0, 0) # Create a single simulation with default angles
+	sim = _create_single_simulation_instance('Plane Wave Simulation2', 0, 0) # Create a single simulation with default angles
 	print(f"--- Created simulation: {sim.Name} ---")
 
 	document.AllSimulations.Add(sim) # Add simulation to document
@@ -246,7 +279,7 @@ def RunSingleSimulation():
 	sim.RunSimulation(wait=True)  # Run simulation (wait for completion)
 	print(f"--- Finished running simulation: {sim.Name} ---")
 
-	AnalyzeSimulation(sim) # Analyze simulation results
+	Analyze_WBSAR(sim) # Analyze simulation results
 
 # --- ここから、複数シミュレーションを実行する新しい関数 ---
 def RunMultiplePlaneWaveSimulations():
@@ -256,7 +289,7 @@ def RunMultiplePlaneWaveSimulations():
 	"""
 	print("--- Starting Multiple Simulations ---")
 	# Create a new S4L document
-	document.New()
+	#document.New()
 
 	# Create model entities once
 	# This ensures the same model is used across all simulations.
@@ -324,10 +357,7 @@ def main(data_path=None, project_dir=None):
 	#RunSingleSimulation()
 
 	# --- 複数シミュレーションの実行 ---
-	#RunMultiplePlaneWaveSimulations()
-
-	# --- （デバック用）ドキュメントにシミュレーションを追加するためのもの ---
-	add_simulation_to_document(None)  # Add a simulation to the document
+	RunMultiplePlaneWaveSimulations()
 
 	# --- 以下のコードは、プロジェクトディレクトリの作成と保存を行うためのもの ---
 	"""
