@@ -2,6 +2,7 @@ from __future__ import absolute_import
 from __future__ import print_function
 import sys, os
 import numpy as np
+import csv
 
 import s4l_v1.document as document
 import s4l_v1.model as model
@@ -228,130 +229,158 @@ def Analyze_EM_E(sim):
 	document.AllAlgorithms.Add( slice_field_viewer_efield )
 
 def Analyze_WBSAR(sim):
-    """
-    指定されたシミュレーションの結果を解析し、
-    「Volume Weighted Average」SAR値を抽出し表示します。
-    """
-    import json # JSONデータを扱うためにjsonモジュールをインポート
+	"""
+	指定されたシミュレーションの結果を解析し、
+	「Volume Weighted Average」SAR値を抽出し表示します。
+	"""
+	import json # JSONデータを扱うためにjsonモジュールをインポート
 
-    results = sim.Results()
-    print(f"Analysis results for: {sim.Name}")
-    print(results)
+	results = sim.Results()
+	print(f"Analysis results for: {sim.Name}")
+	print(results)
 
-    em_sensor_extractor = results[ 'Overall Field' ]
-    em_sensor_extractor.FrequencySettings.ExtractedFrequency = u"All"
-    document.AllAlgorithms.Add( em_sensor_extractor )
+	em_sensor_extractor = results[ 'Overall Field' ]
+	em_sensor_extractor.FrequencySettings.ExtractedFrequency = u"All"
+	document.AllAlgorithms.Add( em_sensor_extractor )
 
-    inputs_for_statistics = [em_sensor_extractor.Outputs["SAR(x,y,z,f0)"]]
-    statistics_evaluator = analysis_core.StatisticsEvaluator(inputs=inputs_for_statistics)
-    statistics_evaluator.Mode = u"Value"
-    statistics_evaluator.UpdateAttributes()
-    document.AllAlgorithms.Add( statistics_evaluator )
-    
-    # 統計評価アルゴリズムの計算を強制的に実行
-    # Update() が False を返す場合、計算に失敗したことを示す
-    if not statistics_evaluator.Update(): # Update()の戻り値で計算成功をチェック
-        print(f"DEBUG: StatisticsEvaluator '{statistics_evaluator.Name}' failed to update/compute. Cannot extract SAR statistics.")
-        return # 計算に失敗したため、処理を中断
+	inputs_for_statistics = [em_sensor_extractor.Outputs["SAR(x,y,z,f0)"]]
+	statistics_evaluator = analysis_core.StatisticsEvaluator(inputs=inputs_for_statistics)
+	statistics_evaluator.Mode = u"Value"
+	statistics_evaluator.UpdateAttributes()
+	document.AllAlgorithms.Add( statistics_evaluator )
+	
+	# 統計評価アルゴリズムの計算を強制的に実行
+	# Update() が False を返す場合、計算に失敗したことを示す
+	if not statistics_evaluator.Update(): # Update()の戻り値で計算成功をチェック
+		print(f"DEBUG: StatisticsEvaluator '{statistics_evaluator.Name}' failed to update/compute. Cannot extract SAR statistics.")
+		return # 計算に失敗したため、処理を中断
 
-    # --- ここからが修正箇所：Volume Weighted Average の値を取得 ---
+	# --- ここからが修正箇所：Volume Weighted Average の値を取得 ---
 
-    # 1. StatisticsEvaluatorの「SAR Statistics」出力（AlgorithmOutputオブジェクト）を取得
-    sar_statistics_output_ref = statistics_evaluator.Outputs["SAR Statistics"]
+	# 1. StatisticsEvaluatorの「SAR Statistics」出力（AlgorithmOutputオブジェクト）を取得
+	sar_statistics_output_ref = statistics_evaluator.Outputs["SAR Statistics"]
 
-    # 2. AlgorithmOutputオブジェクトの .Data プロパティを使って、JsonDataObjectを取得
-    json_data_object = sar_statistics_output_ref.Data
+	# 2. AlgorithmOutputオブジェクトの .Data プロパティを使って、JsonDataObjectを取得
+	json_data_object = sar_statistics_output_ref.Data
 
-    # デバッグ: 取得したオブジェクトの型を確認
-    print(f"DEBUG: Type of json_data_object: {type(json_data_object)}")
-    
-    # --- ここから JsonDataObject のプロパティをデバッグ出力 ---
-    print("\n--- DEBUG: Inspecting JsonDataObject Properties ---")
-    
-    # DataJson プロパティの確認
-    if hasattr(json_data_object, 'DataJson'):
-        print(f"DEBUG: json_data_object.DataJson type: {type(json_data_object.DataJson)}")
-        print(f"DEBUG: json_data_object.DataJson content (first 300 chars): {str(json_data_object.DataJson)[:300]}...")
-    else:
-        print("DEBUG: json_data_object has no 'DataJson' attribute.")
+	# デバッグ: 取得したオブジェクトの型を確認
+	print(f"DEBUG: Type of json_data_object: {type(json_data_object)}")
+	
+	# --- ここから JsonDataObject のプロパティをデバッグ出力 ---
+	print("\n--- DEBUG: Inspecting JsonDataObject Properties ---")
+	
+	# DataJson プロパティの確認
+	if hasattr(json_data_object, 'DataJson'):
+		print(f"DEBUG: json_data_object.DataJson type: {type(json_data_object.DataJson)}")
+		print(f"DEBUG: json_data_object.DataJson content (first 300 chars): {str(json_data_object.DataJson)[:300]}...")
+	else:
+		print("DEBUG: json_data_object has no 'DataJson' attribute.")
 
-    # AttributeJson プロパティの確認
-    if hasattr(json_data_object, 'AttributeJson'):
-        print(f"DEBUG: json_data_object.AttributeJson type: {type(json_data_object.AttributeJson)}")
-        print(f"DEBUG: json_data_object.AttributeJson content (first 300 chars): {str(json_data_object.AttributeJson)[:300]}...")
-    else:
-        print("DEBUG: json_data_object has no 'AttributeJson' attribute.")
+	# AttributeJson プロパティの確認
+	if hasattr(json_data_object, 'AttributeJson'):
+		print(f"DEBUG: json_data_object.AttributeJson type: {type(json_data_object.AttributeJson)}")
+		print(f"DEBUG: json_data_object.AttributeJson content (first 300 chars): {str(json_data_object.AttributeJson)[:300]}...")
+	else:
+		print("DEBUG: json_data_object has no 'AttributeJson' attribute.")
 
-    # keys() メソッドの確認 (辞書のように振る舞うか)
-    if hasattr(json_data_object, 'keys') and callable(json_data_object.keys):
-        try:
-            print(f"DEBUG: json_data_object.keys(): {list(json_data_object.keys())}")
-            # もしキーがあれば、最初のキーでアクセスを試みる
-            if list(json_data_object.keys()):
-                first_key = list(json_data_object.keys())[0]
-                print(f"DEBUG: Accessing first key '{first_key}': {json_data_object[first_key]}")
-        except Exception as e:
-            print(f"DEBUG: Error calling json_data_object.keys() or accessing by key: {e}") #これが出力された。よって keys() メソッドは存在するが、辞書のように振る舞わない可能性がある
-    else:
-        print("DEBUG: json_data_object has no 'keys()' method.")
+	# keys() メソッドの確認 (辞書のように振る舞うか)
+	if hasattr(json_data_object, 'keys') and callable(json_data_object.keys):
+		try:
+			print(f"DEBUG: json_data_object.keys(): {list(json_data_object.keys())}")
+			# もしキーがあれば、最初のキーでアクセスを試みる
+			if list(json_data_object.keys()):
+				first_key = list(json_data_object.keys())[0]
+				print(f"DEBUG: Accessing first key '{first_key}': {json_data_object[first_key]}")
+		except Exception as e:
+			print(f"DEBUG: Error calling json_data_object.keys() or accessing by key: {e}") #これが出力された。よって keys() メソッドは存在するが、辞書のように振る舞わない可能性がある
+	else:
+		print("DEBUG: json_data_object has no 'keys()' method.")
 
-    print("--- DEBUG: End JsonDataObject Inspection ---\n")
-    # --- デバッグ出力ここまで ---
+	print("--- DEBUG: End JsonDataObject Inspection ---\n")
+	# --- デバッグ出力ここまで ---
 
-    # --- 新しいデータ抽出ロジック: DataJsonからの直接抽出 ---
-    volume_weighted_average_value = None
+	# --- 新しいデータ抽出ロジック: DataJsonからの直接抽出 ---
+	volume_weighted_average_value = None
 
 	# JsonDataObjectがDataJson属性を持ち、文字列であることを確認
-    if hasattr(json_data_object, 'DataJson') and isinstance(json_data_object.DataJson, str):
-        try:
-            # DataJson文字列をPythonオブジェクト（辞書）にパース
-            parsed_data = json.loads(json_data_object.DataJson)
-            print("DEBUG: Successfully parsed DataJson string.") # これが出力された。よってパースは成功している。
+	if hasattr(json_data_object, 'DataJson') and isinstance(json_data_object.DataJson, str):
+		try:
+			# DataJson文字列をPythonオブジェクト（辞書）にパース
+			parsed_data = json.loads(json_data_object.DataJson)
+			print("DEBUG: Successfully parsed DataJson string.") # これが出力された。よってパースは成功している。
 
-            # デバッグ出力から判明したネストされた構造をたどる
-            # {"simple_data_collection":{"data_collection":{"Average":{"data":[VALUE]...
-            if "simple_data_collection" in parsed_data and \
-               "data_collection" in parsed_data["simple_data_collection"] and \
-               "Average" in parsed_data["simple_data_collection"]["data_collection"] and \
-               "data" in parsed_data["simple_data_collection"]["data_collection"]["Average"] and \
-               isinstance(parsed_data["simple_data_collection"]["data_collection"]["Average"]["data"], list) and \
-               len(parsed_data["simple_data_collection"]["data_collection"]["Average"]["data"]) > 0:
-                
-                volume_weighted_average_value = parsed_data["simple_data_collection"]["data_collection"]["Average"]["data"][0]
-                print("DEBUG: Extracted Volume Weighted Average value from nested dictionary.") # これが出力された。よって値の抽出は成功している。
-            else:
-                print("DEBUG: Could not find 'Volume Weighted Average' data in expected nested structure.")
+			# デバッグ出力から判明したネストされた構造をたどる
+			# {"simple_data_collection":{"data_collection":{"Average":{"data":[VALUE]...
+			if "simple_data_collection" in parsed_data and \
+			   "data_collection" in parsed_data["simple_data_collection"] and \
+			   "Average" in parsed_data["simple_data_collection"]["data_collection"] and \
+			   "data" in parsed_data["simple_data_collection"]["data_collection"]["Average"] and \
+			   isinstance(parsed_data["simple_data_collection"]["data_collection"]["Average"]["data"], list) and \
+			   len(parsed_data["simple_data_collection"]["data_collection"]["Average"]["data"]) > 0:
+				
+				volume_weighted_average_value = parsed_data["simple_data_collection"]["data_collection"]["Average"]["data"][0]
+				print("DEBUG: Extracted Volume Weighted Average value from nested dictionary.") # これが出力された。よって値の抽出は成功している。
+			else:
+				print("DEBUG: Could not find 'Volume Weighted Average' data in expected nested structure.")
 
-        except json.JSONDecodeError as e:
-            print(f"ERROR: Failed to decode DataJson string: {e}")
-        except Exception as e:
-            print(f"ERROR: An unexpected error occurred during data extraction from parsed DataJson: {e}")
-    else:
-        print("ERROR: JsonDataObject has no 'DataJson' attribute or 'DataJson' is not a string. Cannot extract value.")
+		except json.JSONDecodeError as e:
+			print(f"ERROR: Failed to decode DataJson string: {e}")
+		except Exception as e:
+			print(f"ERROR: An unexpected error occurred during data extraction from parsed DataJson: {e}")
+	else:
+		print("ERROR: JsonDataObject has no 'DataJson' attribute or 'DataJson' is not a string. Cannot extract value.")
 
-    # 最終的な値が取得できたか確認
-    if volume_weighted_average_value is not None:
-        print(f"Volume Weighted Average for simulation '{sim.Name}': {volume_weighted_average_value} W/kg")
-        
-        # これで 'volume_weighted_average_value' 変数に目的の値が格納されました。
-        # この値を後続の処理やファイルへの書き出しなどに使用できます。
-    else:
-        print(f"WARNING: 'Volume Weighted Average' not found in SAR Statistics data for {sim.Name} using direct access methods.")
+	# 最終的な値が取得できたか確認
+	if volume_weighted_average_value is not None:
+		print(f"Volume Weighted Average for simulation '{sim.Name}': {volume_weighted_average_value} W/kg")
+		
+		# これで 'volume_weighted_average_value' 変数に目的の値が格納されました。
+		# この値を後続の処理やファイルへの書き出しなどに使用できます。
+	else:
+		print(f"WARNING: 'Volume Weighted Average' not found in SAR Statistics data for {sim.Name} using direct access methods.")
 
-    # --- ここまでが追加コード ---
+	# --- ここまでが追加コード ---
 
-    # --- DataTableHTMLViewerの初期化と追加 ---
-    # 新しいDataTableHTMLViewerを追加
-    # ここでは、元のstatistics_evaluatorの出力をそのまま使用します。
-    # HTMLビューアはJsonDataObjectを直接表示できる場合が多いです。
-    inputs_for_html_viewer = [statistics_evaluator.Outputs["SAR Statistics"]] 
-    data_table_html_viewer = viewers.DataTableHTMLViewer(inputs=inputs_for_html_viewer)
-    
-    # 属性を更新
-    data_table_html_viewer.UpdateAttributes()
-    # S4Lドキュメントに追加
-    document.AllAlgorithms.Add(data_table_html_viewer)
+	# --- DataTableHTMLViewerの初期化と追加 ---
+	# 新しいDataTableHTMLViewerを追加
+	# ここでは、元のstatistics_evaluatorの出力をそのまま使用します。
+	# HTMLビューアはJsonDataObjectを直接表示できる場合が多いです。
+	inputs_for_html_viewer = [statistics_evaluator.Outputs["SAR Statistics"]] 
+	data_table_html_viewer = viewers.DataTableHTMLViewer(inputs=inputs_for_html_viewer)
+	
+	# 属性を更新
+	data_table_html_viewer.UpdateAttributes()
+	# S4Lドキュメントに追加
+	document.AllAlgorithms.Add(data_table_html_viewer)
+	# 抽出した値を戻り値として追加
+	return volume_weighted_average_value
 
+# --- ここから、SAR解析結果をCSVファイルに書き込む関数 ---
+def write_sar_results_to_csv(results_list, filename="WBSAR_results.csv"):
+	"""
+	SAR解析結果のリストをCSVファイルに書き込みます。
+	ファイルが存在しない場合はヘッダー行を作成し、存在する場合はデータを追記します。
+
+	Args:
+		results_list (list): 各要素が辞書形式のSAR結果データを含むリスト。
+							 例: [{'SimulationName': '...', 'Direction': '...', 'VWA_SAR': ...}]
+		filename (str): 出力するCSVファイルのパスと名前。
+	"""
+	# ファイルが存在するかどうかを確認し、ヘッダーを書き込む必要があるかを判断
+	file_exists = os.path.exists(filename)
+	
+	# 'a' は追記モード、'w' は上書きモード
+	# newline='' はcsvモジュールで推奨される設定
+	with open(filename, 'a' if file_exists else 'w', newline='', encoding='utf-8') as csvfile:
+		fieldnames = ['SimulationName', 'Direction', 'VWA_SAR'] # CSVの列名
+		writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+
+		if not file_exists:
+			writer.writeheader() # ファイルが新規作成された場合のみヘッダーを書き込む
+
+		for row in results_list:
+			writer.writerow(row)
+	print(f"\nResults successfully written to '{filename}'.")
 
 # --- ここから、元のRunSingleSimulation関数 ---
 def RunSingleSimulation():
@@ -373,7 +402,24 @@ def RunSingleSimulation():
 	sim.RunSimulation(wait=True)  # Run simulation (wait for completion)
 	print(f"--- Finished running simulation: {sim.Name} ---")
 
-	Analyze_WBSAR(sim) # Analyze simulation results
+	# Analyze_WBSARから値を取得し、CSVに書き出す
+	vwa_sar = Analyze_WBSAR(sim) # Analyze_WBSARから値を取得
+
+	# 単一シミュレーションの結果をリストに格納
+	single_sar_result = []
+	if vwa_sar is not None:
+		single_sar_result.append({
+			'SimulationName': sim.Name,
+			'Direction': 'Single Run', # 単一シミュレーションの方向として 'Single Run' を使用
+			'VWA_SAR': vwa_sar
+		})
+	
+	# 単一シミュレーションの結果をCSVファイルに出力
+	output_filename = "D:/Users/Kusakabe/single_simulation_sar_results.csv"
+	if single_sar_result: # 結果がある場合のみ書き出す
+		write_sar_results_to_csv(single_sar_result, output_filename)
+	else:
+		print(f"WARNING: No SAR results to write for single simulation to '{output_filename}'.")
 
 # --- ここから、複数シミュレーションを実行する新しい関数 ---
 def RunMultiplePlaneWaveSimulations():
@@ -407,8 +453,8 @@ def RunMultiplePlaneWaveSimulations():
 		("Right (X+)", 90.0, 0.0)    # Arrives from negative X-axis (Phi=0°)
 	]
 
-	# List to store created simulation objects
-	created_simulations = []
+	# List to store collected SAR results for all simulations
+	all_sar_results = []
 
 	print("\n--- Simulation Creation Phase ---")
 	for name_suffix, theta_deg, phi_deg in simulation_configs:
@@ -425,21 +471,50 @@ def RunMultiplePlaneWaveSimulations():
 		sim_instance.UpdateGrid()
 		sim_instance.CreateVoxels() 
 
-		created_simulations.append(sim_instance) # Add to list for later execution and analysis
+		# created_simulations.append(sim_instance) # このリストは実行フェーズで作成するため不要に
 
 	print("\n--- Simulation Execution Phase ---")
 	# Run all created simulations sequentially
-	for sim_to_run in created_simulations:
-		print(f"Running simulation: {sim_to_run.Name}...")
-		sim_to_run.RunSimulation(wait=True) # wait=True to wait for simulation completion
-		print(f"Finished simulation: {sim_to_run.Name}")
+	# document.AllSimulations は、追加された順序でシミュレーションを保持します。
+	# ただし、シミュレーション名でアクセスする方が堅牢です。
+	
+	# シミュレーション名とオブジェクトのマッピングを作成
+	sim_map = {sim.Name: sim for sim in document.AllSimulations}
+
+	for name_suffix, _, _ in simulation_configs:
+		sim_full_name = 'Plane Wave Simulation - ' + name_suffix
+		sim_to_run = sim_map.get(sim_full_name) # マップからシミュレーションを取得
+
+		if sim_to_run:
+			print(f"Running simulation: {sim_to_run.Name}...")
+			sim_to_run.RunSimulation(wait=True) # wait=True to wait for simulation completion
+			print(f"Finished running simulation: {sim_to_run.Name}")
+		else:
+			print(f"WARNING: Simulation '{sim_full_name}' not found for execution.")
 
 	print("\n--- Simulation Analysis Phase ---")
-	# Analyze results for all simulations
-	for sim_to_analyze in created_simulations:
-		Analyze_WBSAR(sim_to_analyze)
+	# Analyze results for all simulations and collect them
+	for name_suffix, _, _ in simulation_configs:
+		sim_full_name = 'Plane Wave Simulation - ' + name_suffix
+		sim_to_analyze = sim_map.get(sim_full_name) # マップからシミュレーションを取得
+
+		if sim_to_analyze:
+			vwa_sar = Analyze_WBSAR(sim_to_analyze) # Analyze_WBSARから値を取得
+			if vwa_sar is not None:
+				all_sar_results.append({
+					'SimulationName': sim_full_name,
+					'Direction': name_suffix.split('(')[0].strip(), # 例: "Front"
+					'VWA_SAR': vwa_sar
+				})
+		else:
+			print(f"WARNING: Simulation '{sim_full_name}' not found for analysis.")
+
 	print("All simulations analyzed.")
 	print("--- Multiple Simulations Finished ---")
+
+	# すべてのSAR結果をCSVファイルに出力
+	output_filename = "D:/Users/Kusakabe/multiple_simulation_sar_results.csv"
+	write_sar_results_to_csv(all_sar_results, output_filename)
 
 def main(data_path=None, project_dir=None):
 	import sys
