@@ -18,6 +18,7 @@ from s4l_v1 import Unit # Unitクラスのインポート (材料データベー
 _CFILE = os.path.abspath(sys.argv[0] if __name__ == '__main__' else __file__ )
 _CDIR = os.path.dirname(_CFILE)
 
+# モデルを作成する関数
 def CreateModel():
 	"""
 	シミュレーションに必要なモデルエンティティを作成します。
