@@ -200,6 +200,7 @@ def CreateSimulation():
 
 	return sim
 
+# --- ここから、結果解析のための関数 ---
 def Analyze_EM_E(sim):
 	"""
 	Analyzes the results of the specified simulation and adds viewers.
@@ -382,7 +383,7 @@ def write_sar_results_to_csv(results_list, filename="WBSAR_results.csv"):
 			writer.writerow(row)
 	print(f"\nResults successfully written to '{filename}'.")
 
-# --- ここから、元のRunSingleSimulation関数 ---
+# --- ここから、RunSingleSimulation関数 ---
 def RunSingleSimulation():
 
 	document.New() # Create a new document
@@ -421,7 +422,7 @@ def RunSingleSimulation():
 	else:
 		print(f"WARNING: No SAR results to write for single simulation to '{output_filename}'.")
 
-# --- ここから、複数シミュレーションを実行する新しい関数 ---
+# --- ここから、複数シミュレーションを実行する関数 ---
 def RunMultiplePlaneWaveSimulations():
 	"""
 	Creates, runs, and analyzes multiple plane wave simulations.
