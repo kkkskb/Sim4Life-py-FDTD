@@ -19,12 +19,6 @@ from s4l_v1 import Unit # Unitのインポート
 
 _CFILE = os.path.abspath(sys.argv[0] if __name__ == '__main__' else __file__ )
 _CDIR = os.path.dirname(_CFILE)
-	"""
-	既存のモデルからエンティティがロードされることを前提とします。
-	この関数は、シミュレーションが実行されるS4Lプロジェクトに
-	必要なモデルエンティティ（例: tissue_0, tissue_1, wire_block1 など）が既に存在することを前提とします。
-	"""
-	pass # 何も作成しない (既存モデルを使用するため)
 
 # --- ここから、単一シミュレーションインスタンス作成のためのヘルパー関数 ---
 def _create_single_simulation_instance(sim_name, theta_deg, phi_deg, psi_deg):
@@ -224,7 +218,7 @@ def _create_single_simulation_instance(sim_name, theta_deg, phi_deg, psi_deg):
 	return sim
 
 # --- ここから、SAR解析のための関数 ---
-def Analyze_WBSAR(sim):
+def _analyze_wbsar(sim):
 	"""
 	指定されたシミュレーションの結果を解析し、
 	「Volume Weighted Average」SAR値を抽出し表示します。
@@ -334,8 +328,6 @@ def Analyze_WBSAR(sim):
 	else:
 		print(f"WARNING: 'Volume Weighted Average' not found in SAR Statistics data for {sim.Name} using direct access methods.")
 
-	# --- ここまでが追加コード ---
-
 	# --- DataTableHTMLViewerの初期化と追加 ---
 	# 新しいDataTableHTMLViewerを追加
 	# ここでは、元のstatistics_evaluatorの出力をそのまま使用します。
@@ -351,7 +343,7 @@ def Analyze_WBSAR(sim):
 	return volume_weighted_average_value # 抽出した値を戻り値として追加
 
 # --- SAR解析結果をCSVファイルに書き込む関数 ---
-def write_sar_results_to_csv(results_list, filename):
+def _write_sar_results_to_csv(results_list, filename):
 	"""
 	SAR解析結果のリストをCSVファイルに書き込みます。
 	ファイルが存在しない場合はヘッダー行を作成し、存在する場合はデータを追記します。
@@ -382,30 +374,30 @@ def write_sar_results_to_csv(results_list, filename):
 
 # --- モデル名とCSV出力ファイルパスを取得する関数 ---
 def _get_simulation_info_from_document():
-    """
-    Sim4Lifeドキュメントからモデル名を取得します。
-    ドキュメントが未保存の場合は、デフォルト名を返します。
+	"""
+	Sim4Lifeドキュメントからモデル名を取得します。
+	ドキュメントが未保存の場合は、デフォルト名を返します。
 
-    Returns:
-        str: モデル名
-    """
-    # 現在開いているドキュメントのファイル名を取得します。
-    smash_file_path = document.GetName()
-    
-    if not smash_file_path:
-        # ドキュメントが保存されていない場合、デフォルトのモデル名を使用
-        model_name = "Standing Model"
-        print(f"INFO: Document not saved. Using default model name: '{model_name}'.")
-        return model_name
-    else:
-        # 保存済みのドキュメントがある場合、そのファイル名からモデル名を生成
-        base_name = os.path.basename(smash_file_path)
-        model_name = os.path.splitext(base_name)[0]
-        print(f"INFO: Document saved at '{smash_file_path}'. Using model name: '{model_name}'.")
-        return model_name
+	Returns:
+		str: モデル名
+	"""
+	# 現在開いているドキュメントのファイル名を取得します。
+	smash_file_path = document.GetName()
+	
+	if not smash_file_path:
+		# ドキュメントが保存されていない場合、デフォルトのモデル名を使用
+		model_name = "Standing Model"
+		print(f"INFO: Document not saved. Using default model name: '{model_name}'.")
+		return model_name
+	else:
+		# 保存済みのドキュメントがある場合、そのファイル名からモデル名を生成
+		base_name = os.path.basename(smash_file_path)
+		model_name = os.path.splitext(base_name)[0]
+		print(f"INFO: Document saved at '{smash_file_path}'. Using model name: '{model_name}'.")
+		return model_name
 
 # --- 既存のシミュレーションを削除する関数 ---
-def delete_all_simulations_in_document():
+def _delete_all_simulations_in_document():
 	"""
 	Deletes all simulations currently present in the S4L document.
 	This is useful to ensure a clean slate before creating new simulations,
@@ -425,13 +417,13 @@ def delete_all_simulations_in_document():
 		print("No existing simulations to delete.")
 
 # --- ここから、複数シミュレーションを実行する新しい関数 ---
-def RunMultiplePlaneWaveSimulations(output_filename):
+def run_multiple_plane_wave_simulations(output_filename):
 	"""
 	Creates, runs, and analyzes multiple plane wave simulations for a given model.
 	The plane wave arrival direction is varied for each simulation.
 
 	Args:
-		model_name (str): The name of the anatomical model (e.g., 'Standing Model', 'Seated Model').
+		output_filename (str): The name of the output CSV file.
 	"""
 
 	model_name = _get_simulation_info_from_document()  # モデル名を取得
@@ -440,7 +432,7 @@ def RunMultiplePlaneWaveSimulations(output_filename):
 	print(f"INFO: Assumed model '{model_name}' is already loaded in Sim4Life.")
 
 	# 既存のシミュレーションを削除
-	delete_all_simulations_in_document()
+	_delete_all_simulations_in_document()
 
 	# 平面波の到来方向の設定リスト
 	# 各タプルは (シミュレーション名サフィックス, Theta角[度], Phi角[度], Psi角[度]) を表します。
@@ -488,7 +480,7 @@ def RunMultiplePlaneWaveSimulations(output_filename):
 		sim_to_analyze = sim_map.get(sim_full_name)
 
 		if sim_to_analyze:
-			vwa_sar = Analyze_WBSAR(sim_to_analyze)
+			vwa_sar = _analyze_wbsar(sim_to_analyze)
 			if vwa_sar is not None:
 				all_sar_results.append({
 					'ModelName': model_name,
@@ -503,7 +495,7 @@ def RunMultiplePlaneWaveSimulations(output_filename):
 	print(f"--- Multiple Simulations Finished for Model: {model_name} ---")
 
 	# 結果をCSVファイルに書き出す
-	write_sar_results_to_csv(all_sar_results, output_filename)
+	_write_sar_results_to_csv(all_sar_results, output_filename)
 
 
 def main(data_path=None, project_dir=None):
@@ -519,7 +511,7 @@ def main(data_path=None, project_dir=None):
 	output_filename = "wbsar_results.csv"
 
 	# 複数の平面波シミュレーションを実行
-	RunMultiplePlaneWaveSimulations(output_filename)
+	run_multiple_plane_wave_simulations(output_filename)
 
 if __name__ == '__main__':
 	main()
