@@ -353,31 +353,35 @@ def Analyze_WBSAR(sim):
 	return volume_weighted_average_value # 抽出した値を戻り値として追加
 
 # --- SAR解析結果をCSVファイルに書き込む関数 ---
-def write_sar_results_to_csv(results_list, filename="sar_results.csv"):
-	"""
-	SAR解析結果のリストをCSVファイルに書き込みます。
-	ファイルが存在しない場合はヘッダー行を作成し、存在する場合はデータを追記します。
+def write_sar_results_to_csv(results_list, filename):
+    """
+    SAR解析結果のリストをCSVファイルに書き込みます。
+    ファイルが存在しない場合はヘッダー行を作成し、存在する場合はデータを追記します。
+    
+    出力情報に「モデル名」を追加しています。
 
-	Args:
-		results_list (list): 各要素が辞書形式のSAR結果データを含むリスト。
-							 例: [{'SimulationName': '...', 'Direction': '...', 'VWA_SAR': ...}]
-		filename (str): 出力するCSVファイルのパスと名前。
-	"""
-	# ファイルが存在するかどうかを確認し、ヘッダーを書き込む必要があるかを判断
-	file_exists = os.path.exists(filename)
-	
-	# 'a' は追記モード、'w' は上書きモード
-	# newline='' はcsvモジュールで推奨される設定
-	with open(filename, 'a' if file_exists else 'w', newline='', encoding='utf-8') as csvfile:
-		fieldnames = ['SimulationName', 'Direction', 'VWA_SAR'] # CSVの列名
-		writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+    Args:
+        results_list (list): 各要素が辞書形式のSAR結果データを含むリスト。
+                             例: [{'ModelName': '...', 'SimulationName': '...', 'Direction': '...', 'VWA_SAR': ...}]
+        filename (str): 出力するCSVファイルのパスと名前。
+    """
+    # ファイルが存在するかどうかを確認し、ヘッダーを書き込む必要があるかを判断
+    file_exists = os.path.exists(filename)
+    
+    # 'a' は追記モード、'w' は上書きモード
+    # newline='' はcsvモジュールで推奨される設定
+    with open(filename, 'a' if file_exists else 'w', newline='', encoding='utf-8') as csvfile:
+        # CSVの列名に'ModelName'を追加
+        fieldnames = ['ModelName', 'SimulationName', 'Direction', 'VWA_SAR'] 
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
 
-		if not file_exists:
-			writer.writeheader() # ファイルが新規作成された場合のみヘッダーを書き込む
+        if not file_exists:
+            writer.writeheader() # ファイルが新規作成された場合のみヘッダーを書き込む
 
-		for row in results_list:
-			writer.writerow(row)
-	print(f"\nResults successfully written to '{filename}'.")
+        for row in results_list:
+            writer.writerow(row)
+    print(f"\nResults successfully written to '{filename}'.")
+
 
 # --- 既存のシミュレーションを削除する関数 ---
 def delete_all_simulations_in_document():
