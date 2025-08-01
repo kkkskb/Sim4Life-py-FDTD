@@ -11,7 +11,7 @@ import s4l_v1.simulation.emfdtd as fdtd
 import s4l_v1.analysis as analysis
 import s4l_v1.analysis.core as analysis_core
 import s4l_v1.analysis.viewers as viewers
-#import s4l_v1.materials.database as database # 材料データベースのインポートを有効化
+import s4l_v1.materials.database as database # 材料データベースのインポートを有効化
 
 import s4l_v1.units as units
 from s4l_v1 import ReleaseVersion # ReleaseVersionのインポート
@@ -451,12 +451,19 @@ def RunSingleSimulation():
 		print(f"WARNING: No SAR results to write for single simulation to '{output_filename}'.")
 
 # --- ここから、複数シミュレーションを実行する新しい関数 ---
-def RunMultiplePlaneWaveSimulations():
+def RunMultiplePlaneWaveSimulations(model_name):
 	"""
-	Creates, runs, and analyzes multiple plane wave simulations.
+	Creates, runs, and analyzes multiple plane wave simulations for a given model.
 	The plane wave arrival direction is varied for each simulation.
+
+	Args:
+		model_name (str): The name of the anatomical model (e.g., 'Standing Model', 'Seated Model').
 	"""
-	print("--- Starting Multiple Simulations ---")
+	print(f"--- Starting Multiple Simulations for Model: {model_name} ---")
+	
+	# Sim4LifeのPython Editorで実行する場合、スクリプト実行前に手動でモデルをロードしておく必要があります。
+	print(f"INFO: Assumed model '{model_name}' is already loaded in Sim4Life.")
+
 	# document.New() は削除し、既存シミュレーションを削除する関数を呼び出す
 	delete_all_simulations_in_document()
 
@@ -464,12 +471,6 @@ def RunMultiplePlaneWaveSimulations():
 
 	# 平面波の到来方向の設定リスト
 	# 各タプルは (シミュレーション名サフィックス, Theta角[度], Phi角[度], Psi角[度]) を表します。
-	# Theta: Z軸からの角度（90度はXY平面上）
-	# Phi: XY平面内でX軸からの角度（反時計回り）
-	# Psi: Eフィールドの偏波角度
-	# 伝搬方向は到来方向と逆になります。
-	# 例: Phi=0（正のX軸）は、波が負のX軸から到来し、正のX軸方向へ伝搬することを意味します。
-	# ここでは前後左右からの到来を想定しています。Psiは元のCreateSimulationのデフォルト値90.0を使用。
 	simulation_configs = [
 		("Front (Y-)", 90.0, 270.0, 90.0), # 正のY軸から到来
 		("Back (Y+)", 90.0, 90.0, 90.0),   # 負のY軸から到来
@@ -477,66 +478,61 @@ def RunMultiplePlaneWaveSimulations():
 		("Right (X+)", 90.0, 0.0, 90.0)    # 負のX軸から到来
 	]
 
-	# List to store collected SAR results for all simulations
 	all_sar_results = []
 
 	print("\n--- Simulation Creation Phase ---")
 	for name_suffix, theta_deg, phi_deg, psi_deg in simulation_configs:
-		sim_full_name = 'Plane Wave Simulation - ' + name_suffix
+		sim_full_name = f"{model_name} - {name_suffix}"
 		print(f"Creating simulation: {sim_full_name} (Theta={theta_deg}, Phi={phi_deg}, Psi={psi_deg})")
 
-		# ヘルパー関数を呼び出して単一のシミュレーションインスタンスを作成
 		sim_instance = _create_single_simulation_instance(sim_full_name, theta_deg, phi_deg, psi_deg)
 		
-		if sim_instance is None: # _create_single_simulation_instanceでエラーがあった場合
+		if sim_instance is None:
 			print(f"ERROR: Failed to create simulation instance '{sim_full_name}'. Skipping.")
-			continue # 次のシミュレーションへ
+			continue
 
-		# Add simulation to S4L document
 		document.AllSimulations.Add(sim_instance)
-		
-		# Update grid and voxels (this call might internally trigger project saving)
 		sim_instance.UpdateGrid()
 		sim_instance.CreateVoxels() 
 
 	print("\n--- Simulation Execution Phase ---")
-	# シミュレーション名とオブジェクトのマッピングを作成
 	sim_map = {sim.Name: sim for sim in document.AllSimulations}
 
 	for name_suffix, _, _, _ in simulation_configs:
-		sim_full_name = 'Plane Wave Simulation - ' + name_suffix
-		sim_to_run = sim_map.get(sim_full_name) # マップからシミュレーションを取得
+		sim_full_name = f"{model_name} - {name_suffix}"
+		sim_to_run = sim_map.get(sim_full_name)
 
 		if sim_to_run:
 			print(f"Running simulation: {sim_to_run.Name}...")
-			sim_to_run.RunSimulation(wait=True) # wait=True to wait for simulation completion
+			sim_to_run.RunSimulation(wait=True)
 			print(f"Finished running simulation: {sim_to_run.Name}")
 		else:
 			print(f"WARNING: Simulation '{sim_full_name}' not found for execution.")
 
 	print("\n--- Simulation Analysis Phase ---")
-	# Analyze results for all simulations and collect them
 	for name_suffix, _, _, _ in simulation_configs:
-		sim_full_name = 'Plane Wave Simulation - ' + name_suffix
-		sim_to_analyze = sim_map.get(sim_full_name) # マップからシミュレーションを取得
+		sim_full_name = f"{model_name} - {name_suffix}"
+		sim_to_analyze = sim_map.get(sim_full_name)
 
 		if sim_to_analyze:
-			vwa_sar = Analyze_WBSAR(sim_to_analyze) # Analyze_WBSARから値を取得
+			vwa_sar = Analyze_WBSAR(sim_to_analyze)
 			if vwa_sar is not None:
 				all_sar_results.append({
+					'ModelName': model_name,
 					'SimulationName': sim_full_name,
-					'Direction': name_suffix.split('(')[0].strip(), # 例: "Front"
+					'Direction': name_suffix.split('(')[0].strip(),
 					'VWA_SAR': vwa_sar
 				})
 		else:
 			print(f"WARNING: Simulation '{sim_full_name}' not found for analysis.")
 
 	print("All simulations analyzed.")
-	print("--- Multiple Simulations Finished ---")
+	print(f"--- Multiple Simulations Finished for Model: {model_name} ---")
 
-	# すべてのSAR結果をCSVファイルに出力
-	output_filename = "D:/Users/Kusakabe/Taro_python/multiple_wbsar_results.csv" # ご自身のパスに変更してください
+	# CSVファイル名を固定値に設定
+	output_filename = "D:/Users/Kusakabe/multiple_simulation_sar_results.csv" # ご自身のパスに変更してください
 	write_sar_results_to_csv(all_sar_results, output_filename)
+
 
 def main(data_path=None, project_dir=None):
 	"""
