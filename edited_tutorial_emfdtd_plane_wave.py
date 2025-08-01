@@ -200,7 +200,7 @@ def CreateSimulation():
 
 	return sim
 
-# --- ここから、結果解析のための関数 ---
+# --- ここから、電界強度結果のための関数 ---
 def Analyze_EM_E(sim):
 	"""
 	Analyzes the results of the specified simulation and adds viewers.
@@ -229,6 +229,7 @@ def Analyze_EM_E(sim):
 	# ビューアをS4Lドキュメントのアルゴリズムとして追加
 	document.AllAlgorithms.Add( slice_field_viewer_efield )
 
+# --- ここから、WBSAR解析結果のための関数 ---
 def Analyze_WBSAR(sim):
 	"""
 	指定されたシミュレーションの結果を解析し、
