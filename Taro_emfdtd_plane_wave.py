@@ -374,27 +374,27 @@ def _write_sar_results_to_csv(results_list, filename):
 
 # --- モデル名とCSV出力ファイルパスを取得する関数 ---
 def _get_simulation_info_from_document():
-	"""
-	Sim4Lifeドキュメントからモデル名を取得します。
-	ドキュメントが未保存の場合は、デフォルト名を返します。
+    """
+    Sim4Lifeドキュメントからモデル名を取得します。
+    ドキュメントが未保存の場合は、デフォルト名を返します。
 
-	Returns:
-		str: モデル名
-	"""
-	# 現在開いているドキュメントのファイル名を取得します。
-	smash_file_path = document.GetName()
-	
-	if not smash_file_path:
-		# ドキュメントが保存されていない場合、デフォルトのモデル名を使用
-		model_name = "Standing Model"
-		print(f"INFO: Document not saved. Using default model name: '{model_name}'.")
-		return model_name
-	else:
-		# 保存済みのドキュメントがある場合、そのファイル名からモデル名を生成
-		base_name = os.path.basename(smash_file_path)
-		model_name = os.path.splitext(base_name)[0]
-		print(f"INFO: Document saved at '{smash_file_path}'. Using model name: '{model_name}'.")
-		return model_name
+    Returns:
+        str: モデル名
+    """
+    # 現在開いているドキュメントのファイル名を取得します。
+    smash_file_path = document.FileName
+    
+    if not smash_file_path:
+        # ドキュメントが保存されていない場合、デフォルトのモデル名を使用
+        model_name = "Standing Model"
+        print(f"INFO: Document not saved. Using default model name: '{model_name}'.")
+        return model_name
+    else:
+        # 保存済みのドキュメントがある場合、そのファイル名からモデル名を生成
+        base_name = os.path.basename(smash_file_path)
+        model_name = os.path.splitext(base_name)[0]
+        print(f"INFO: Document saved at '{smash_file_path}'. Using model name: '{model_name}'.")
+        return model_name
 
 # --- 既存のシミュレーションを削除する関数 ---
 def _delete_all_simulations_in_document():
@@ -508,7 +508,7 @@ def main(data_path=None, project_dir=None):
 	print("Running in:", os.getcwd(), "@", os.environ.get('COMPUTERNAME', 'Unknown'))
 	
 	# 出力ファイル名を指定
-	output_filename = "wbsar_results.csv"
+	output_filename = "E:\Kusaskabe\wbsar_results.csv"
 
 	# 複数の平面波シミュレーションを実行
 	run_multiple_plane_wave_simulations(output_filename)
