@@ -20,14 +20,6 @@ from s4l_v1 import Unit # Unitのインポート
 _CFILE = os.path.abspath(sys.argv[0] if __name__ == '__main__' else __file__ )
 _CDIR = os.path.dirname(_CFILE)
 
-def CreateModel():
-	"""
-	既存のモデルからエンティティがロードされることを前提とします。
-	この関数は、シミュレーションが実行されるS4Lプロジェクトに
-	必要なモデルエンティティ（例: tissue_0, tissue_1, wire_block1 など）が既に存在することを前提とします。
-	"""
-	pass # 何も作成しない (既存モデルを使用するため)
-
 # --- ここから、単一シミュレーションインスタンス作成のためのヘルパー関数 ---
 def _create_single_simulation_instance(sim_name, theta_deg, phi_deg, psi_deg):
 	"""
@@ -226,7 +218,7 @@ def _create_single_simulation_instance(sim_name, theta_deg, phi_deg, psi_deg):
 	return sim
 
 # --- ここから、SAR解析のための関数 ---
-def Analyze_WBSAR(sim):
+def _analyze_wbsar(sim):
 	"""
 	指定されたシミュレーションの結果を解析し、
 	「Volume Weighted Average」SAR値を抽出し表示します。
@@ -336,8 +328,6 @@ def Analyze_WBSAR(sim):
 	else:
 		print(f"WARNING: 'Volume Weighted Average' not found in SAR Statistics data for {sim.Name} using direct access methods.")
 
-	# --- ここまでが追加コード ---
-
 	# --- DataTableHTMLViewerの初期化と追加 ---
 	# 新しいDataTableHTMLViewerを追加
 	# ここでは、元のstatistics_evaluatorの出力をそのまま使用します。
@@ -353,14 +343,16 @@ def Analyze_WBSAR(sim):
 	return volume_weighted_average_value # 抽出した値を戻り値として追加
 
 # --- SAR解析結果をCSVファイルに書き込む関数 ---
-def write_sar_results_to_csv(results_list, filename="sar_results.csv"):
+def _write_sar_results_to_csv(results_list, filename):
 	"""
 	SAR解析結果のリストをCSVファイルに書き込みます。
 	ファイルが存在しない場合はヘッダー行を作成し、存在する場合はデータを追記します。
+	
+	出力情報に「モデル名」を追加しています。
 
 	Args:
 		results_list (list): 各要素が辞書形式のSAR結果データを含むリスト。
-							 例: [{'SimulationName': '...', 'Direction': '...', 'VWA_SAR': ...}]
+							 例: [{'ModelName': '...', 'SimulationName': '...', 'Direction': '...', 'VWA_SAR': ...}]
 		filename (str): 出力するCSVファイルのパスと名前。
 	"""
 	# ファイルが存在するかどうかを確認し、ヘッダーを書き込む必要があるかを判断
@@ -369,7 +361,8 @@ def write_sar_results_to_csv(results_list, filename="sar_results.csv"):
 	# 'a' は追記モード、'w' は上書きモード
 	# newline='' はcsvモジュールで推奨される設定
 	with open(filename, 'a' if file_exists else 'w', newline='', encoding='utf-8') as csvfile:
-		fieldnames = ['SimulationName', 'Direction', 'VWA_SAR'] # CSVの列名
+		# CSVの列名に'ModelName'を追加
+		fieldnames = ['ModelName', 'SimulationName', 'Direction', 'VWA_SAR'] 
 		writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
 
 		if not file_exists:
@@ -379,8 +372,32 @@ def write_sar_results_to_csv(results_list, filename="sar_results.csv"):
 			writer.writerow(row)
 	print(f"\nResults successfully written to '{filename}'.")
 
+# --- モデル名とCSV出力ファイルパスを取得する関数 ---
+def _get_simulation_info_from_document():
+    """
+    Sim4Lifeドキュメントからモデル名を取得します。
+    ドキュメントが未保存の場合は、デフォルト名を返します。
+
+    Returns:
+        str: モデル名
+    """
+    # 現在開いているドキュメントのファイル名を取得します。
+    smash_file_path = document.FileName
+    
+    if not smash_file_path:
+        # ドキュメントが保存されていない場合、デフォルトのモデル名を使用
+        model_name = "Standing Model"
+        print(f"INFO: Document not saved. Using default model name: '{model_name}'.")
+        return model_name
+    else:
+        # 保存済みのドキュメントがある場合、そのファイル名からモデル名を生成
+        base_name = os.path.basename(smash_file_path)
+        model_name = os.path.splitext(base_name)[0]
+        print(f"INFO: Document saved at '{smash_file_path}'. Using model name: '{model_name}'.")
+        return model_name
+
 # --- 既存のシミュレーションを削除する関数 ---
-def delete_all_simulations_in_document():
+def _delete_all_simulations_in_document():
 	"""
 	Deletes all simulations currently present in the S4L document.
 	This is useful to ensure a clean slate before creating new simulations,
@@ -399,77 +416,26 @@ def delete_all_simulations_in_document():
 	else:
 		print("No existing simulations to delete.")
 
-# --- ここから、単一シミュレーションを実行する関数 ---
-def RunSingleSimulation():
-	"""
-	単一のシミュレーションインスタンスを実行します。
-	この関数は新しいドキュメント、モデル、単一のシミュレーションを作成し、
-	シミュレーションを実行して全身平均SARを解析します。
-	結果はCSVファイルに書き出されます。
-	"""
-	# document.New() は削除し、既存シミュレーションを削除する関数を呼び出す
-	delete_all_simulations_in_document()
-
-	# CreateModel() は削除 (既存モデルを使用するため)
-	
-	# Create a single simulation instance with default angles and parameters from original CreateSimulation
-	# Psi angle is set to 90.0 as per the original CreateSimulation
-	sim = _create_single_simulation_instance('Single Run Simulation', 90.0, 180.0, 90.0)
-	
-	if sim is None: # _create_single_simulation_instanceでエラーがあった場合
-		print("ERROR: Failed to create single simulation instance. Aborting RunSingleSimulation.")
-		return
-
-	print(f"--- Created simulation: {sim.Name} ---")
-
-	document.AllSimulations.Add(sim) # Add simulation to document
-	print(f"--- Added simulation to document: {sim.Name} ---")
-	sim.UpdateGrid() # Update grid
-	print(f"--- Updated grid for simulation: {sim.Name} ---")
-	sim.CreateVoxels() # Create voxels (this call might internally trigger project saving)
-	print(f"--- Created voxels for simulation: {sim.Name} ---")
-	sim.RunSimulation(wait=True)  # Run simulation (wait for completion)
-	print(f"--- Finished running simulation: {sim.Name} ---")
-
-	# Analyze_WBSARから値を取得し、CSVに書き出す
-	vwa_sar = Analyze_WBSAR(sim) # Analyze_WBSARから値を取得
-
-	# 単一シミュレーションの結果をリストに格納
-	single_sar_result = []
-	if vwa_sar is not None:
-		single_sar_result.append({
-			'SimulationName': sim.Name,
-			'Direction': 'Default', # 単一シミュレーションの方向として 'Default' を使用
-			'VWA_SAR': vwa_sar
-		})
-	
-	# 単一シミュレーションの結果をCSVファイルに出力
-	output_filename = "D:/Users/Kusakabe/Taro_python/single_wbsar_results.csv" # ご自身のパスに変更してください
-	if single_sar_result: # 結果がある場合のみ書き出す
-		write_sar_results_to_csv(single_sar_result, output_filename)
-	else:
-		print(f"WARNING: No SAR results to write for single simulation to '{output_filename}'.")
-
 # --- ここから、複数シミュレーションを実行する新しい関数 ---
-def RunMultiplePlaneWaveSimulations():
+def run_multiple_plane_wave_simulations(output_filename):
 	"""
-	Creates, runs, and analyzes multiple plane wave simulations.
+	Creates, runs, and analyzes multiple plane wave simulations for a given model.
 	The plane wave arrival direction is varied for each simulation.
-	"""
-	print("--- Starting Multiple Simulations ---")
-	# document.New() は削除し、既存シミュレーションを削除する関数を呼び出す
-	delete_all_simulations_in_document()
 
-	# CreateModel() は削除 (既存モデルを使用するため)
+	Args:
+		output_filename (str): The name of the output CSV file.
+	"""
+
+	model_name = _get_simulation_info_from_document()  # モデル名を取得
+
+	print(f"--- Starting Multiple Simulations for Model: {model_name} ---")
+	print(f"INFO: Assumed model '{model_name}' is already loaded in Sim4Life.")
+
+	# 既存のシミュレーションを削除
+	_delete_all_simulations_in_document()
 
 	# 平面波の到来方向の設定リスト
 	# 各タプルは (シミュレーション名サフィックス, Theta角[度], Phi角[度], Psi角[度]) を表します。
-	# Theta: Z軸からの角度（90度はXY平面上）
-	# Phi: XY平面内でX軸からの角度（反時計回り）
-	# Psi: Eフィールドの偏波角度
-	# 伝搬方向は到来方向と逆になります。
-	# 例: Phi=0（正のX軸）は、波が負のX軸から到来し、正のX軸方向へ伝搬することを意味します。
-	# ここでは前後左右からの到来を想定しています。Psiは元のCreateSimulationのデフォルト値90.0を使用。
 	simulation_configs = [
 		("Front (Y-)", 90.0, 270.0, 90.0), # 正のY軸から到来
 		("Back (Y+)", 90.0, 90.0, 90.0),   # 負のY軸から到来
@@ -477,66 +443,60 @@ def RunMultiplePlaneWaveSimulations():
 		("Right (X+)", 90.0, 0.0, 90.0)    # 負のX軸から到来
 	]
 
-	# List to store collected SAR results for all simulations
 	all_sar_results = []
 
 	print("\n--- Simulation Creation Phase ---")
 	for name_suffix, theta_deg, phi_deg, psi_deg in simulation_configs:
-		sim_full_name = 'Plane Wave Simulation - ' + name_suffix
+		sim_full_name = f"{model_name} - {name_suffix}"
 		print(f"Creating simulation: {sim_full_name} (Theta={theta_deg}, Phi={phi_deg}, Psi={psi_deg})")
 
-		# ヘルパー関数を呼び出して単一のシミュレーションインスタンスを作成
 		sim_instance = _create_single_simulation_instance(sim_full_name, theta_deg, phi_deg, psi_deg)
 		
-		if sim_instance is None: # _create_single_simulation_instanceでエラーがあった場合
+		if sim_instance is None:
 			print(f"ERROR: Failed to create simulation instance '{sim_full_name}'. Skipping.")
-			continue # 次のシミュレーションへ
+			continue
 
-		# Add simulation to S4L document
 		document.AllSimulations.Add(sim_instance)
-		
-		# Update grid and voxels (this call might internally trigger project saving)
 		sim_instance.UpdateGrid()
 		sim_instance.CreateVoxels() 
 
 	print("\n--- Simulation Execution Phase ---")
-	# シミュレーション名とオブジェクトのマッピングを作成
 	sim_map = {sim.Name: sim for sim in document.AllSimulations}
 
 	for name_suffix, _, _, _ in simulation_configs:
-		sim_full_name = 'Plane Wave Simulation - ' + name_suffix
-		sim_to_run = sim_map.get(sim_full_name) # マップからシミュレーションを取得
+		sim_full_name = f"{model_name} - {name_suffix}"
+		sim_to_run = sim_map.get(sim_full_name)
 
 		if sim_to_run:
 			print(f"Running simulation: {sim_to_run.Name}...")
-			sim_to_run.RunSimulation(wait=True) # wait=True to wait for simulation completion
+			sim_to_run.RunSimulation(wait=True)
 			print(f"Finished running simulation: {sim_to_run.Name}")
 		else:
 			print(f"WARNING: Simulation '{sim_full_name}' not found for execution.")
 
 	print("\n--- Simulation Analysis Phase ---")
-	# Analyze results for all simulations and collect them
 	for name_suffix, _, _, _ in simulation_configs:
-		sim_full_name = 'Plane Wave Simulation - ' + name_suffix
-		sim_to_analyze = sim_map.get(sim_full_name) # マップからシミュレーションを取得
+		sim_full_name = f"{model_name} - {name_suffix}"
+		sim_to_analyze = sim_map.get(sim_full_name)
 
 		if sim_to_analyze:
-			vwa_sar = Analyze_WBSAR(sim_to_analyze) # Analyze_WBSARから値を取得
+			vwa_sar = _analyze_wbsar(sim_to_analyze)
 			if vwa_sar is not None:
 				all_sar_results.append({
+					'ModelName': model_name,
 					'SimulationName': sim_full_name,
-					'Direction': name_suffix.split('(')[0].strip(), # 例: "Front"
+					'Direction': name_suffix.split('(')[0].strip(),
 					'VWA_SAR': vwa_sar
 				})
 		else:
 			print(f"WARNING: Simulation '{sim_full_name}' not found for analysis.")
 
 	print("All simulations analyzed.")
-	print("--- Multiple Simulations Finished ---")
+	print(f"--- Multiple Simulations Finished for Model: {model_name} ---")
 
-	# すべてのSAR結果をCSVファイルに出力
-	output_filename = "E:/Kusaskabe/wbsar.csv" # ご自身のパスに変更してください
-	write_sar_results_to_csv(all_sar_results, output_filename)
+	# 結果をCSVファイルに書き出す
+	_write_sar_results_to_csv(all_sar_results, output_filename)
+
 
 def main(data_path=None, project_dir=None):
 	"""
@@ -546,27 +506,12 @@ def main(data_path=None, project_dir=None):
 	import os
 	print("Python Version:", sys.version)
 	print("Running in:", os.getcwd(), "@", os.environ.get('COMPUTERNAME', 'Unknown'))
+	
+	# 出力ファイル名を指定
+	output_filename = "E:\Kusaskabe\wbsar_results.csv"
 
-	# --- 実行したいワークフローの行だけコメントを外してください ---
-
-	# オプション1: 複数シミュレーションを実行
-	RunMultiplePlaneWaveSimulations()
-
-	# オプション2: 単一シミュレーションを実行
-	# RunSingleSimulation() 
-
-	# --- プロジェクト保存用の元のコメントアウトブロック ---
-	# 必要に応じて保存機能を有効化してください。
-	"""
-	if project_dir is None:
-		project_dir = os.path.expanduser(os.path.join('~', 'Documents', 's4l_python_tutorials') )
-		
-	if not os.path.exists(project_dir):
-		os.makedirs(project_dir)
-
-	fname = os.path.splitext(os.path.basename(_CFILE))[0] + '.smash'
-	project_path = os.path.join(project_dir, fname)
-	"""
+	# 複数の平面波シミュレーションを実行
+	run_multiple_plane_wave_simulations(output_filename)
 
 if __name__ == '__main__':
 	main()
