@@ -379,6 +379,8 @@ def _get_simulation_info_from_document():
     ドキュメントが未保存の場合は、デフォルト名を返します。
 
     Returns:
+
+	
         str: モデル名
     """
     # 現在開いているドキュメントのファイル名を取得します。
