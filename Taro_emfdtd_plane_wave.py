@@ -501,13 +501,9 @@ def run_multiple_plane_wave_simulations(output_filename):
 
 
 def main(data_path=None, project_dir=None):
-	"""
-	Entry point of the script.
-	"""
 	import sys
 	import os
 	print("Python Version:", sys.version)
-	print("Running in:", os.getcwd(), "@", os.environ.get('COMPUTERNAME', 'Unknown'))
 	
 	# 出力ファイル名を指定
 	output_filename = "E:\Kusaskabe\wbsar_results.csv"
