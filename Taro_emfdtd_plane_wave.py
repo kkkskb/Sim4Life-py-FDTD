@@ -20,11 +20,46 @@ from s4l_v1 import Unit # Unitのインポート
 _CFILE = os.path.abspath(sys.argv[0] if __name__ == '__main__' else __file__ )
 _CDIR = os.path.dirname(_CFILE)
 
+# --- ここから、モデルエンティティを作成する関数 ---
+def _create_model(use_simple_model=False):
+	"""
+	シミュレーションに必要なモデルエンティティを作成します。
+	use_simple_model=Trueの場合、シンプルなデバッグ用ボックスとワイヤーを新規作成します。
+	use_simple_model=Falseの場合、既存のモデルエンティティがロードされていることを前提とし、何もしません。
+	"""
+	from s4l_v1.model import Vec3
+
+	if use_simple_model:
+		print("INFO: Creating simple debug model entities.")
+		# 既存のデバッグ用エンティティを削除してクリーンアップ
+		entities_to_delete_names = ["Debug Box", "Debug Source Wire"]
+		entities_to_delete = []
+		for name in entities_to_delete_names:
+			if name in model.AllEntities():
+				entities_to_delete.append(model.AllEntities()[name])
+		
+		if entities_to_delete:
+			for entity in entities_to_delete:
+				document.New()
+				print("INFO: Deleted existing debug model entities.")
+
+		# シンプルなボックスとワイヤーを作成
+		# サイズは以前の例を参考に調整
+		wire = model.CreateWireBlock(p0=Vec3(-10, -10, -10), p1=Vec3(10, 10, 10), parametrized=True)
+		box = model.CreateSolidBlock(p0=Vec3(-50, -50, -50), p1=Vec3(50, 50, 50), parametrized=True)
+		
+		box.Name = 'Debug Box'
+		wire.Name = 'Debug Source Wire'
+		print("INFO: Debug Box and Debug Source Wire created.")
+	else:
+		# 既存のモデルエンティティがロードされていることを前提とするため、何もしない
+		pass
+
 # --- ここから、単一シミュレーションインスタンス作成のためのヘルパー関数 ---
-def _create_single_simulation_instance(sim_name, theta_deg, phi_deg, psi_deg):
+def _create_single_simulation_instance(sim_name, theta_deg, phi_deg, psi_deg, use_simple_model=False):
 	"""
 	指定された名前と平面波の到来方向を持つ単一のFDTDシミュレーションインスタンスを作成します。
-	この関数は、元のCreateSimulation関数のロジックをベースに、パラメータを受け取るように修正されています。
+	use_simple_modelフラグに基づいて、使用するエンティティと材料を切り替えます。
 	"""
 	# ReleaseVersionをアクティブに設定
 	ReleaseVersion.set_active(ReleaseVersion.version7_2)
@@ -35,184 +70,216 @@ def _create_single_simulation_instance(sim_name, theta_deg, phi_deg, psi_deg):
 	# モデルから必要なエンティティを取得
 	entities = model.AllEntities()
 
-	# 解析条件で指定されたすべてのエンティティをマッピング
-	# これらのエンティティがS4Lのモデル内に存在することを前提とします
-	# KeyErrorsを防ぐため、存在しないエンティティはスキップするか、デフォルト値を使用するロジックを追加することも可能
-	entity_names = [
-		"Tissue_0", "Tissue_1", "Tissue_10", "Tissue_11", "Tissue_12", "Tissue_13", "Tissue_14", "Tissue_15",
-		"Tissue_17", "Tissue_18", "Tissue_19", "Tissue_2", "Tissue_20", "Tissue_21", "Tissue_22", "Tissue_23",
-		"Tissue_24", "Tissue_25", "Tissue_26", "Tissue_28", "Tissue_29", "Tissue_30", "Tissue_31", "Tissue_32",
-		"Tissue_33", "Tissue_34", "Tissue_35", "Tissue_37", "Tissue_38", "Tissue_39", "Tissue_4", "Tissue_42",
-		"Tissue_43", "Tissue_44", "Tissue_45", "Tissue_46", "Tissue_47", "Tissue_48", "Tissue_49", "Tissue_5",
-		"Tissue_50", "Tissue_51", "Tissue_52", "Tissue_53", "Tissue_54", "Tissue_55", "Tissue_56", "Tissue_6",
-		"Tissue_7", "Tissue_8", "Tissue_9", "Wire Block 1"
-	]
-	
-	# 実際に存在するエンティティのみを辞書に格納
-	mapped_entities = {}
-	for name in entity_names:
-		if name in entities:
-			mapped_entities[name] = entities[name]
-		else:
-			print(f"WARNING: Entity '{name}' not found in model. Skipping.")
+	# エンティティとコンポーネントリストの初期化
+	components_fat = []
+	components_skin = []
+	components_muscle = []
+	components_source = []
+	components_grid_all = []
+	components_voxeler_all = []
+
+	if use_simple_model:
+		# デバッグ用シンプルモデルのエンティティを使用
+		entity__wire_block1 = entities.get("Debug Source Wire")
+		entity__debug_box = entities.get("Debug Box") 
+		
+		if not entity__wire_block1 or not entity__debug_box:
+			print(f"ERROR: Debug model entities 'Debug Box' or 'Debug Source Wire' not found for {sim_name}. Ensure _create_model(use_simple_model=True) was called.")
+			return None
+
+		components_muscle = [entity__debug_box] # デバッグボックスを筋肉として扱う
+		components_source = [entity__wire_block1]
+		components_grid_all = [entity__debug_box, entity__wire_block1]
+		components_voxeler_all = [entity__debug_box, entity__wire_block1]
+
+		# シンプルなデバッグ用材料を設定
+		material_settings_debug = fdtd.MaterialSettings()
+		material_settings_debug.Name = "DebugMaterial"
+		material_settings_debug.MassDensity = 1000.0, Unit("kg/m^3")
+		material_settings_debug.ElectricProps.Conductivity = 0.5, Unit("S/m")
+		material_settings_debug.ElectricProps.RelativePermittivity = 50.0
+		sim.Add(material_settings_debug, components_muscle) # デバッグ材料をデバッグボックスに割り当て
+
+	else:
+		# 複雑な人体モデルのエンティティを使用 (元のスクリプトのロジック)
+		entity_names = [
+			"Tissue_0", "Tissue_1", "Tissue_10", "Tissue_11", "Tissue_12", "Tissue_13", "Tissue_14", "Tissue_15",
+			"Tissue_17", "Tissue_18", "Tissue_19", "Tissue_2", "Tissue_20", "Tissue_21", "Tissue_22", "Tissue_23",
+			"Tissue_24", "Tissue_25", "Tissue_26", "Tissue_28", "Tissue_29", "Tissue_30", "Tissue_31", "Tissue_32",
+			"Tissue_33", "Tissue_34", "Tissue_35", "Tissue_37", "Tissue_38", "Tissue_39", "Tissue_4", "Tissue_42",
+			"Tissue_43", "Tissue_44", "Tissue_45", "Tissue_46", "Tissue_47", "Tissue_48", "Tissue_49", "Tissue_5",
+			"Tissue_50", "Tissue_51", "Tissue_52", "Tissue_53", "Tissue_54", "Tissue_55", "Tissue_56", "Tissue_6",
+			"Tissue_7", "Tissue_8", "Tissue_9", "Wire Block 1"
+		]
+		
+		mapped_entities = {}
+		for name in entity_names:
+			if name in entities:
+				mapped_entities[name] = entities[name]
+			else:
+				print(f"WARNING: Entity '{name}' not found in model. Skipping.")
 
 		# 必要なエンティティを直接変数に割り当て (存在しない場合はNoneになる)
-	# 番号順に整理
-	entity__tissue_0 = mapped_entities.get("Tissue_0")
-	entity__tissue_1 = mapped_entities.get("Tissue_1")
-	entity__tissue_2 = mapped_entities.get("Tissue_2")
-	entity__tissue_4 = mapped_entities.get("Tissue_4")
-	entity__tissue_5 = mapped_entities.get("Tissue_5")
-	entity__tissue_6 = mapped_entities.get("Tissue_6")
-	entity__tissue_7 = mapped_entities.get("Tissue_7")
-	entity__tissue_8 = mapped_entities.get("Tissue_8")
-	entity__tissue_9 = mapped_entities.get("Tissue_9")
-	entity__tissue_10 = mapped_entities.get("Tissue_10")
-	entity__tissue_11 = mapped_entities.get("Tissue_11")
-	entity__tissue_12 = mapped_entities.get("Tissue_12")
-	entity__tissue_13 = mapped_entities.get("Tissue_13")
-	entity__tissue_14 = mapped_entities.get("Tissue_14")
-	entity__tissue_15 = mapped_entities.get("Tissue_15")
-	entity__tissue_17 = mapped_entities.get("Tissue_17")
-	entity__tissue_18 = mapped_entities.get("Tissue_18")
-	entity__tissue_19 = mapped_entities.get("Tissue_19")
-	entity__tissue_20 = mapped_entities.get("Tissue_20")
-	entity__tissue_21 = mapped_entities.get("Tissue_21")
-	entity__tissue_22 = mapped_entities.get("Tissue_22")
-	entity__tissue_23 = mapped_entities.get("Tissue_23")
-	entity__tissue_24 = mapped_entities.get("Tissue_24")
-	entity__tissue_25 = mapped_entities.get("Tissue_25")
-	entity__tissue_26 = mapped_entities.get("Tissue_26")
-	entity__tissue_28 = mapped_entities.get("Tissue_28")
-	entity__tissue_29 = mapped_entities.get("Tissue_29")
-	entity__tissue_30 = mapped_entities.get("Tissue_30")
-	entity__tissue_31 = mapped_entities.get("Tissue_31")
-	entity__tissue_32 = mapped_entities.get("Tissue_32")
-	entity__tissue_33 = mapped_entities.get("Tissue_33")
-	entity__tissue_34 = mapped_entities.get("Tissue_34")
-	entity__tissue_35 = mapped_entities.get("Tissue_35")
-	entity__tissue_37 = mapped_entities.get("Tissue_37")
-	entity__tissue_38 = mapped_entities.get("Tissue_38")
-	entity__tissue_39 = mapped_entities.get("Tissue_39")
-	entity__tissue_42 = mapped_entities.get("Tissue_42")
-	entity__tissue_43 = mapped_entities.get("Tissue_43")
-	entity__tissue_44 = mapped_entities.get("Tissue_44")
-	entity__tissue_45 = mapped_entities.get("Tissue_45")
-	entity__tissue_46 = mapped_entities.get("Tissue_46")
-	entity__tissue_47 = mapped_entities.get("Tissue_47") # Skin用
-	entity__tissue_48 = mapped_entities.get("Tissue_48")
-	entity__tissue_49 = mapped_entities.get("Tissue_49")
-	entity__tissue_50 = mapped_entities.get("Tissue_50") # Fat用
-	entity__tissue_51 = mapped_entities.get("Tissue_51")
-	entity__tissue_52 = mapped_entities.get("Tissue_52")
-	entity__tissue_53 = mapped_entities.get("Tissue_53")
-	entity__tissue_54 = mapped_entities.get("Tissue_54")
-	entity__tissue_55 = mapped_entities.get("Tissue_55")
-	entity__tissue_56 = mapped_entities.get("Tissue_56")
-	entity__wire_block1 = mapped_entities.get("Wire Block 1") # Wire Block 1 は最後に
+		entity__wire_block1 = mapped_entities.get("Wire Block 1")
+		entity__tissue_0 = mapped_entities.get("Tissue_0")
+		entity__tissue_1 = mapped_entities.get("Tissue_1")
+		entity__tissue_2 = mapped_entities.get("Tissue_2")
+		entity__tissue_4 = mapped_entities.get("Tissue_4")
+		entity__tissue_5 = mapped_entities.get("Tissue_5")
+		entity__tissue_6 = mapped_entities.get("Tissue_6")
+		entity__tissue_7 = mapped_entities.get("Tissue_7")
+		entity__tissue_8 = mapped_entities.get("Tissue_8")
+		entity__tissue_9 = mapped_entities.get("Tissue_9")
+		entity__tissue_10 = mapped_entities.get("Tissue_10")
+		entity__tissue_11 = mapped_entities.get("Tissue_11")
+		entity__tissue_12 = mapped_entities.get("Tissue_12")
+		entity__tissue_13 = mapped_entities.get("Tissue_13")
+		entity__tissue_14 = mapped_entities.get("Tissue_14")
+		entity__tissue_15 = mapped_entities.get("Tissue_15")
+		entity__tissue_17 = mapped_entities.get("Tissue_17")
+		entity__tissue_18 = mapped_entities.get("Tissue_18")
+		entity__tissue_19 = mapped_entities.get("Tissue_19")
+		entity__tissue_20 = mapped_entities.get("Tissue_20")
+		entity__tissue_21 = mapped_entities.get("Tissue_21")
+		entity__tissue_22 = mapped_entities.get("Tissue_22")
+		entity__tissue_23 = mapped_entities.get("Tissue_23")
+		entity__tissue_24 = mapped_entities.get("Tissue_24")
+		entity__tissue_25 = mapped_entities.get("Tissue_25")
+		entity__tissue_26 = mapped_entities.get("Tissue_26")
+		entity__tissue_28 = mapped_entities.get("Tissue_28")
+		entity__tissue_29 = mapped_entities.get("Tissue_29")
+		entity__tissue_30 = mapped_entities.get("Tissue_30")
+		entity__tissue_31 = mapped_entities.get("Tissue_31")
+		entity__tissue_32 = mapped_entities.get("Tissue_32")
+		entity__tissue_33 = mapped_entities.get("Tissue_33")
+		entity__tissue_34 = mapped_entities.get("Tissue_34")
+		entity__tissue_35 = mapped_entities.get("Tissue_35")
+		entity__tissue_37 = mapped_entities.get("Tissue_37")
+		entity__tissue_38 = mapped_entities.get("Tissue_38")
+		entity__tissue_39 = mapped_entities.get("Tissue_39")
+		entity__tissue_42 = mapped_entities.get("Tissue_42")
+		entity__tissue_43 = mapped_entities.get("Tissue_43")
+		entity__tissue_44 = mapped_entities.get("Tissue_44")
+		entity__tissue_45 = mapped_entities.get("Tissue_45")
+		entity__tissue_46 = mapped_entities.get("Tissue_46")
+		entity__tissue_47 = mapped_entities.get("Tissue_47") # Skin用
+		entity__tissue_48 = mapped_entities.get("Tissue_48")
+		entity__tissue_49 = mapped_entities.get("Tissue_49")
+		entity__tissue_50 = mapped_entities.get("Tissue_50") # Fat用
+		entity__tissue_51 = mapped_entities.get("Tissue_51")
+		entity__tissue_52 = mapped_entities.get("Tissue_52")
+		entity__tissue_53 = mapped_entities.get("Tissue_53")
+		entity__tissue_54 = mapped_entities.get("Tissue_54")
+		entity__tissue_55 = mapped_entities.get("Tissue_55")
+		entity__tissue_56 = mapped_entities.get("Tissue_56")
+		entity__wire_block1 = mapped_entities.get("Wire Block 1") # Wire Block 1 は最後に
+
+		# Materials (元の複雑な材料割り当てロジック)
+		# Adding a new MaterialSettings for Fat
+		material_settings_fat = fdtd.MaterialSettings()
+		components_fat = [entity__tissue_50] if entity__tissue_50 else [] # エンティティが存在する場合のみ追加
+		try:
+			mat_fat = database["IT'IS 4.1"]["Fat"]
+			sim.LinkMaterialWithDatabase(material_settings_fat, mat_fat)
+		except Exception as e:
+			print(f"Warning: 'Fat' material not found in database or linking failed ({e}). Using fallback values for {sim_name}.")
+			material_settings_fat.Name = "Fat"
+			material_settings_fat.MassDensity = 911.0, Unit("kg/m^3")
+			material_settings_fat.ElectricProps.Conductivity = 0.11638198214029223, Unit("S/m")
+			material_settings_fat.ElectricProps.RelativePermittivity = 11.29425354244377
+		if components_fat: # コンポーネントが存在する場合のみsim.Add
+			sim.Add(material_settings_fat, components_fat)
+
+		# Adding a new MaterialSettings for Skin
+		material_settings_skin = fdtd.MaterialSettings()
+		components_skin = [entity__tissue_47] if entity__tissue_47 else [] # エンティティが存在する場合のみ追加
+		try:
+			mat_skin = database["IT'IS 4.1"]["Skin"]
+			sim.LinkMaterialWithDatabase(material_settings_skin, mat_skin)
+		except Exception as e:
+			print(f"Warning: 'Skin' material not found in database or linking failed ({e}). Using fallback values for {sim_name}.")
+			material_settings_skin.Name = "Skin"
+			material_settings_skin.MassDensity = 1109.0, Unit("kg/m^3")
+			material_settings_skin.ElectricProps.Conductivity = 0.8997924135002646, Unit("S/m")
+			material_settings_skin.ElectricProps.RelativePermittivity = 40.936135452253346
+		if components_skin: # コンポーネントが存在する場合のみsim.Add
+			sim.Add(material_settings_skin, components_skin)
+
+		# Adding a new MaterialSettings for Muscle
+		material_settings_muscle = fdtd.MaterialSettings()
+		components_muscle_complex = [ # 既存の複雑なモデル用筋肉コンポーネント
+			entity__tissue_0, entity__tissue_1, entity__tissue_10, entity__tissue_11, entity__tissue_12, entity__tissue_13,
+			entity__tissue_14, entity__tissue_15, entity__tissue_17, entity__tissue_18, entity__tissue_19, entity__tissue_2,
+			entity__tissue_20, entity__tissue_21, entity__tissue_22, entity__tissue_23, entity__tissue_24, entity__tissue_25,
+			entity__tissue_26, entity__tissue_28, entity__tissue_29, entity__tissue_30, entity__tissue_31, entity__tissue_32,
+			entity__tissue_33, entity__tissue_34, entity__tissue_35, entity__tissue_37, entity__tissue_38, entity__tissue_39,
+			entity__tissue_4, entity__tissue_42, entity__tissue_43, entity__tissue_44, entity__tissue_45, entity__tissue_46,
+			entity__tissue_48, entity__tissue_49, entity__tissue_5, entity__tissue_51, entity__tissue_52, entity__tissue_53,
+			entity__tissue_54, entity__tissue_55, entity__tissue_56, entity__tissue_6, entity__tissue_7, entity__tissue_8,
+			entity__tissue_9
+		]
+		# Noneのエンティティを除外
+		components_muscle = [e for e in components_muscle_complex if e is not None]
+
+		try:
+			mat_muscle = database["IT'IS 4.1"]["Muscle"]
+			sim.LinkMaterialWithDatabase(material_settings_muscle, mat_muscle)
+		except Exception as e:
+			print(f"Warning: 'Muscle' material not found in database or linking failed ({e}). Using fallback values for {sim_name}.")
+			material_settings_muscle.Name = "Muscle"
+			material_settings_muscle.MassDensity = 1090.4, Unit("kg/m^3")
+			material_settings_muscle.ElectricProps.Conductivity = 0.9782042083052804, Unit("S/m")
+			material_settings_muscle.ElectricProps.RelativePermittivity = 54.81107626413944
+		if components_muscle: # コンポーネントが存在する場合のみsim.Add
+			sim.Add(material_settings_muscle, components_muscle)
+
+		# ソース、グリッド、ボクセルの対象エンティティリストを構築
+		components_source = [entity__wire_block1] if entity__wire_block1 else []
+		components_grid_all = [e for e in mapped_entities.values() if e is not None]
+		components_voxeler_all = components_grid_all
 
 
 	# Setup
 	setup_settings = sim.SetupSettings
 	setup_settings.GlobalAutoTermination = setup_settings.GlobalAutoTermination.enum.GlobalAutoTerminationStrict
-	setup_settings.SimulationTime = 30.0, units.Periods # 解析条件に合わせて変更 (元のスクリプトの値を反映)
-
-	# Materials
-	# Adding a new MaterialSettings for Fat
-	material_settings_fat = fdtd.MaterialSettings()
-	components_fat = [entity__tissue_50] if entity__tissue_50 else [] # エンティティが存在する場合のみ追加
-	try:
-		mat_fat = database["IT'IS 4.1"]["Fat"]
-		sim.LinkMaterialWithDatabase(material_settings_fat, mat_fat)
-	except Exception as e:
-		print(f"Warning: 'Fat' material not found in database or linking failed ({e}). Using fallback values for {sim_name}.")
-		material_settings_fat.Name = "Fat"
-		material_settings_fat.MassDensity = 911.0, Unit("kg/m^3")
-		material_settings_fat.ElectricProps.Conductivity = 0.11638198214029223, Unit("S/m")
-		material_settings_fat.ElectricProps.RelativePermittivity = 11.29425354244377
-	if components_fat: # コンポーネントが存在する場合のみsim.Add
-		sim.Add(material_settings_fat, components_fat)
-
-	# Adding a new MaterialSettings for Skin
-	material_settings_skin = fdtd.MaterialSettings()
-	components_skin = [entity__tissue_47] if entity__tissue_47 else [] # エンティティが存在する場合のみ追加
-	try:
-		mat_skin = database["IT'IS 4.1"]["Skin"]
-		sim.LinkMaterialWithDatabase(material_settings_skin, mat_skin)
-	except Exception as e:
-		print(f"Warning: 'Skin' material not found in database or linking failed ({e}). Using fallback values for {sim_name}.")
-		material_settings_skin.Name = "Skin"
-		material_settings_skin.MassDensity = 1109.0, Unit("kg/m^3")
-		material_settings_skin.ElectricProps.Conductivity = 0.8997924135002646, Unit("S/m")
-		material_settings_skin.ElectricProps.RelativePermittivity = 40.936135452253346
-	if components_skin: # コンポーネントが存在する場合のみsim.Add
-		sim.Add(material_settings_skin, components_skin)
-
-	# Adding a new MaterialSettings for Muscle
-	material_settings_muscle = fdtd.MaterialSettings()
-	components_muscle = [
-		entity__tissue_0, entity__tissue_1, entity__tissue_10, entity__tissue_11, entity__tissue_12, entity__tissue_13,
-		entity__tissue_14, entity__tissue_15, entity__tissue_17, entity__tissue_18, entity__tissue_19, entity__tissue_2,
-		entity__tissue_20, entity__tissue_21, entity__tissue_22, entity__tissue_23, entity__tissue_24, entity__tissue_25,
-		entity__tissue_26, entity__tissue_28, entity__tissue_29, entity__tissue_30, entity__tissue_31, entity__tissue_32,
-		entity__tissue_33, entity__tissue_34, entity__tissue_35, entity__tissue_37, entity__tissue_38, entity__tissue_39,
-		entity__tissue_4, entity__tissue_42, entity__tissue_43, entity__tissue_44, entity__tissue_45, entity__tissue_46,
-		entity__tissue_48, entity__tissue_49, entity__tissue_5, entity__tissue_51, entity__tissue_52, entity__tissue_53,
-		entity__tissue_54, entity__tissue_55, entity__tissue_56, entity__tissue_6, entity__tissue_7, entity__tissue_8,
-		entity__tissue_9
-	]
-	# Noneのエンティティを除外
-	components_muscle = [e for e in components_muscle if e is not None]
-
-	try:
-		mat_muscle = database["IT'IS 4.1"]["Muscle"]
-		sim.LinkMaterialWithDatabase(material_settings_muscle, mat_muscle)
-	except Exception as e:
-		print(f"Warning: 'Muscle' material not found in database or linking failed ({e}). Using fallback values for {sim_name}.")
-		material_settings_muscle.Name = "Muscle"
-		material_settings_muscle.MassDensity = 1090.4, Unit("kg/m^3")
-		material_settings_muscle.ElectricProps.Conductivity = 0.9782042083052804, Unit("S/m")
-		material_settings_muscle.ElectricProps.RelativePermittivity = 54.81107626413944
-	if components_muscle: # コンポーネントが存在する場合のみsim.Add
-		sim.Add(material_settings_muscle, components_muscle)
+	setup_settings.SimulationTime = 30.0, units.Periods 
 
 	# Sources
 	plane_wave_source_settings = fdtd.PlaneWaveSourceSettings()
-	components_source = [entity__wire_block1] if entity__wire_block1 else [] # wire_block1が存在する場合のみ追加
-	if not components_source:
-		print(f"ERROR: 'Wire Block 1' entity not found for source in {sim_name}. Cannot set up plane wave source.")
-		return None # ソース設定不可のためシミュレーション作成を中止
-
+	if not components_source: # ソースエンティティがない場合はエラー
+		print(f"ERROR: No source components available for {sim_name}. Cannot set up plane wave source.")
+		return None 
 	plane_wave_source_settings.Theta = theta_deg, units.Degrees
 	plane_wave_source_settings.Phi = phi_deg, units.Degrees
-	plane_wave_source_settings.Psi = psi_deg, units.Degrees # Psi角度をパラメータから設定
+	plane_wave_source_settings.Psi = psi_deg, units.Degrees
 	sim.Add(plane_wave_source_settings, components_source)
 
-	# Sensors (元のスクリプトのコメント通り、Overall Field Sensorのみ)
-	# Boundary Conditions (元のスクリプトから変更なし)
+	# Sensors (Overall Field Sensorのみ)
+	# Boundary Conditions
 	options = sim.GlobalBoundarySettings.GlobalBoundaryType.enum
 	sim.GlobalBoundarySettings.GlobalBoundaryType = options.UpmlCpml
 
 	# Grid
-	# AutomaticGridSettings "Automatic"
 	automatic_grid_settings = [x for x in sim.AllSettings if isinstance(x, fdtd.AutomaticGridSettings) and x.Name == "Automatic"][0]
-	components_grid_all = [e for e in mapped_entities.values() if e is not None] # 全てのマップされたエンティティをグリッド対象に
 	sim.Add(automatic_grid_settings, components_grid_all)
 
 	# Voxels
-	# AutomaticVoxelerSettings "Automatic Voxeler Settings"
 	automatic_voxeler_settings = [x for x in sim.AllSettings if isinstance(x, fdtd.AutomaticVoxelerSettings) and x.Name == "Automatic Voxeler Settings"][0]
-	components_voxeler_all = components_grid_all # グリッドと同じコンポーネントリストを使用
 	sim.Add(automatic_voxeler_settings, components_voxeler_all)
 
-	# Solver
+	# Solver: AXwareを試し、失敗した場合はSoftwareにフォールバックする
 	solver_settings = sim.SolverSettings
-	solver_settings.Kernel = solver_settings.Kernel.enum.AXware # AXwareソルバーを使用
-
-	# Update the materials with the new frequency parameters
+	options = solver_settings.Kernel.enum
+	try:
+		# まずGPUベースのAXwareソルバーを試す
+		solver_settings.Kernel = options.AXware
+		print("INFO: Attempting to use AXware GPU solver.")
+	except Exception as e:
+		# ライセンスエラーなどが発生した場合にSoftwareにフォールバック
+		print(f"WARNING: Failed to set AXware solver due to: {e}. Falling back to Software (CPU) solver.")
+		solver_settings.Kernel = options.Software
+	
 	sim.UpdateAllMaterials() 
-
-	# Update the grid with the new parameters
 	sim.UpdateGrid()
 	
 	return sim
@@ -256,6 +323,7 @@ def _analyze_wbsar(sim):
 	# デバッグ: 取得したオブジェクトの型を確認
 	print(f"DEBUG: Type of json_data_object: {type(json_data_object)}")
 	
+	"""
 	# --- ここから JsonDataObject のプロパティをデバッグ出力 ---
 	print("\n--- DEBUG: Inspecting JsonDataObject Properties ---")
 	
@@ -288,6 +356,7 @@ def _analyze_wbsar(sim):
 
 	print("--- DEBUG: End JsonDataObject Inspection ---\n")
 	# --- デバッグ出力ここまで ---
+	"""
 
 	# --- 新しいデータ抽出ロジック: DataJsonからの直接抽出 ---
 	volume_weighted_average_value = None
@@ -374,29 +443,29 @@ def _write_sar_results_to_csv(results_list, filename):
 
 # --- モデル名とCSV出力ファイルパスを取得する関数 ---
 def _get_simulation_info_from_document():
-    """
-    Sim4Lifeドキュメントからモデル名を取得します。
-    ドキュメントが未保存の場合は、デフォルト名を返します。
+	"""
+	Sim4Lifeドキュメントからモデル名を取得します。
+	ドキュメントが未保存の場合は、デフォルト名を返します。
 
-    Returns:
+	Returns:
 
 	
-        str: モデル名
-    """
-    # 現在開いているドキュメントのファイル名を取得します。
-    smash_file_path = document.FileName
-    
-    if not smash_file_path:
-        # ドキュメントが保存されていない場合、デフォルトのモデル名を使用
-        model_name = "Standing Model"
-        print(f"INFO: Document not saved. Using default model name: '{model_name}'.")
-        return model_name
-    else:
-        # 保存済みのドキュメントがある場合、そのファイル名からモデル名を生成
-        base_name = os.path.basename(smash_file_path)
-        model_name = os.path.splitext(base_name)[0]
-        print(f"INFO: Document saved at '{smash_file_path}'. Using model name: '{model_name}'.")
-        return model_name
+		str: モデル名
+	"""
+	# 現在開いているドキュメントのファイル名を取得します。
+	smash_file_path = document.FileName
+	
+	if not smash_file_path:
+		# ドキュメントが保存されていない場合、デフォルトのモデル名を使用
+		model_name = "Standing Model"
+		print(f"INFO: Document not saved. Using default model name: '{model_name}'.")
+		return model_name
+	else:
+		# 保存済みのドキュメントがある場合、そのファイル名からモデル名を生成
+		base_name = os.path.basename(smash_file_path)
+		model_name = os.path.splitext(base_name)[0]
+		print(f"INFO: Document saved at '{smash_file_path}'. Using model name: '{model_name}'.")
+		return model_name
 
 # --- 既存のシミュレーションを削除する関数 ---
 def _delete_all_simulations_in_document():
@@ -419,16 +488,21 @@ def _delete_all_simulations_in_document():
 		print("No existing simulations to delete.")
 
 # --- ここから、複数シミュレーションを実行する新しい関数 ---
-def run_multiple_plane_wave_simulations(output_filename):
+def run_multiple_plane_wave_simulations(output_filename, use_simple_model=False):
 	"""
 	Creates, runs, and analyzes multiple plane wave simulations for a given model.
-	The plane wave arrival direction is varied for each simulation.
+	The plane wave arrival direction is varied for each simulation (12 directions in XY plane, vertical and horizontal polarization).
 
 	Args:
 		output_filename (str): The name of the output CSV file.
+		use_simple_model (bool): If True, creates and uses simple debug model entities.
+								 If False, assumes complex anatomical model is loaded.
 	"""
 
-	model_name = _get_simulation_info_from_document()  # モデル名を取得
+	# モデルを作成 (use_simple_modelフラグに基づいて切り替え)
+	_create_model(use_simple_model=use_simple_model)
+
+	model_name = _get_simulation_info_from_document() # モデル名を取得
 
 	print(f"--- Starting Multiple Simulations for Model: {model_name} ---")
 	print(f"INFO: Assumed model '{model_name}' is already loaded in Sim4Life.")
@@ -436,14 +510,18 @@ def run_multiple_plane_wave_simulations(output_filename):
 	# 既存のシミュレーションを削除
 	_delete_all_simulations_in_document()
 
-	# 平面波の到来方向の設定リスト
+	# 平面波の到来方向と偏波の設定リスト (XY平面上を30度おきの計12方向 x 2偏波)
 	# 各タプルは (シミュレーション名サフィックス, Theta角[度], Phi角[度], Psi角[度]) を表します。
-	simulation_configs = [
-		("Front (Y-)", 90.0, 270.0, 90.0), # 正のY軸から到来
-		("Back (Y+)", 90.0, 90.0, 90.0),   # 負のY軸から到来
-		("Left (X-)", 90.0, 180.0, 90.0),  # 正のX軸から到来
-		("Right (X+)", 90.0, 0.0, 90.0)    # 負のX軸から到来
-	]
+	# Theta: Z軸からの角度（990度はXY平面上）
+	# Phi: XY平面内でX軸からの角度（反時計回り）
+	# Psi: Eフィールドの偏波角度 (90.0: 垂直偏波, 0.0: 水平偏波)
+	simulation_configs = []
+	polarizations = {"VPol": 90.0, "HPol": 0.0} # 偏波タイプと対応するPsi角度の辞書
+
+	for pol_name, psi_angle in polarizations.items():
+		for phi_angle in range(0, 360, 30): # 0, 30, ..., 330
+			name_suffix = f"Phi_{phi_angle:03d}_{pol_name}" # 例: "Phi_000_VPol", "Phi_030_HPol"
+			simulation_configs.append((name_suffix, 90.0, float(phi_angle), psi_angle))
 
 	all_sar_results = []
 
@@ -487,11 +565,12 @@ def run_multiple_plane_wave_simulations(output_filename):
 				all_sar_results.append({
 					'ModelName': model_name,
 					'SimulationName': sim_full_name,
-					'Direction': name_suffix.split('(')[0].strip(),
+					'Direction': name_suffix, # 方向名にPhi角度と偏波情報が含まれる
 					'VWA_SAR': vwa_sar
 				})
 		else:
-			print(f"WARNING: Simulation '{sim_full_name}' not found for analysis.")
+			print(f"WARNING: Simulation '{sim_full_name}' not found for analysis.") # タイプミスを修正
+			
 
 	print("All simulations analyzed.")
 	print(f"--- Multiple Simulations Finished for Model: {model_name} ---")
@@ -504,12 +583,17 @@ def main(data_path=None, project_dir=None):
 	import sys
 	import os
 	print("Python Version:", sys.version)
+
+	# デバッグモードのフラグ
+	# True に設定すると、シンプルなデバッグ用モデルが作成・使用されます。
+	# False に設定すると、Sim4Lifeにロードされている複雑な人体モデルが使用されます。
+	DEBUG_MODE_SIMPLE_MODEL = False
 	
 	# 出力ファイル名を指定
 	output_filename = "E:\Kusaskabe\wbsar_results.csv"
 
 	# 複数の平面波シミュレーションを実行
-	run_multiple_plane_wave_simulations(output_filename)
+	run_multiple_plane_wave_simulations(output_filename,  use_simple_model=DEBUG_MODE_SIMPLE_MODEL)
 
 if __name__ == '__main__':
 	main()
