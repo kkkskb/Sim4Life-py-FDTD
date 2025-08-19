@@ -321,10 +321,9 @@ def _analyze_wbsar(sim):
 	json_data_object = sar_statistics_output_ref.Data
 
 	# デバッグ: 取得したオブジェクトの型を確認
-	print(f"DEBUG: Type of json_data_object: {type(json_data_object)}")
+	#print(f"DEBUG: Type of json_data_object: {type(json_data_object)}")
 	
-	"""
-	# --- ここから JsonDataObject のプロパティをデバッグ出力 ---
+	""" --- ここから JsonDataObject のプロパティをデバッグ出力 ---
 	print("\n--- DEBUG: Inspecting JsonDataObject Properties ---")
 	
 	# DataJson プロパティの確認
@@ -365,7 +364,7 @@ def _analyze_wbsar(sim):
 		try:
 			# DataJson文字列をPythonオブジェクト（辞書）にパース
 			parsed_data = json.loads(json_data_object.DataJson)
-			print("DEBUG: Successfully parsed DataJson string.")
+			# print("DEBUG: Successfully parsed DataJson string.")
 
 			# デバッグ出力から判明したネストされた構造をたどる
 			# {"simple_data_collection":{"data_collection":{"Average":{"data":[VALUE]...
@@ -377,16 +376,20 @@ def _analyze_wbsar(sim):
 			   len(parsed_data["simple_data_collection"]["data_collection"]["Average"]["data"]) > 0:
 				
 				volume_weighted_average_value = parsed_data["simple_data_collection"]["data_collection"]["Average"]["data"][0]
-				print("DEBUG: Extracted Volume Weighted Average value from nested dictionary.")
+				# print("DEBUG: Extracted Volume Weighted Average value from nested dictionary.")
 			else:
-				print("DEBUG: Could not find 'Volume Weighted Average' data in expected nested structure.")
+				# print("DEBUG: Could not find 'Volume Weighted Average' data in expected nested structure.")
+				pass
 
 		except json.JSONDecodeError as e:
-			print(f"ERROR: Failed to decode DataJson string: {e}")
+			# print(f"ERROR: Failed to decode DataJson string: {e}")
+			pass
 		except Exception as e:
-			print(f"ERROR: An unexpected error occurred during data extraction from parsed DataJson: {e}")
+			# print(f"ERROR: An unexpected error occurred during data extraction from parsed DataJson: {e}")
+			pass
 	else:
-		print("ERROR: JsonDataObject has no 'DataJson' attribute or 'DataJson' is not a string. Cannot extract value.")
+		# print("ERROR: JsonDataObject has no 'DataJson' attribute or 'DataJson' is not a string. Cannot extract value.")
+		pass
 
 	# 最終的な値が取得できたか確認
 	if volume_weighted_average_value is not None:
