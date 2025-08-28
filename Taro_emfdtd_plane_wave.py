@@ -22,14 +22,25 @@ _CDIR = os.path.dirname(_CFILE)
 
 # --- ここから、モデルエンティティを作成する関数 ---
 def _create_model():
+	"""
+	Sim4Lifeドキュメントに'Wire Block 1'という名前のエンティティが存在しない場合に、
+	新しいWire Blockを作成します。
+	"""
 	from s4l_v1.model import Vec3
-
-	wire = model.CreateWireBlock(p0=Vec3(-100,-100,-100), p1=Vec3(1800, 1800, 1800), parametrized=True)
-	wire.Name = 'Wire Block 1'
-
-	# 既存のモデルエンティティがロードされていることを前提とするため、何もしない
-	pass
-
+	
+	# 既存のモデルエンティティリストを取得
+	entities = model.AllEntities()
+	
+	# 'Wire Block 1'が既に存在するかチェック
+	if 'Wire Block 1' in entities:
+		print("INFO: 'Wire Block 1' already exists in the document. Skipping creation.")
+		pass # 既存の場合は何もしない
+	else:
+		# 存在しない場合のみ新しいワイヤーブロックを作成
+		print("INFO: 'Wire Block 1' not found. Creating a new one.")
+		wire = model.CreateWireBlock(p0=Vec3(-100,-100,-100), p1=Vec3(1800, 1800, 1800), parametrized=True)
+		wire.Name = 'Wire Block 1'
+		
 # --- ここから、単一シミュレーションインスタンス作成のためのヘルパー関数 ---
 def _create_single_simulation_instance(sim_name, theta_deg, phi_deg, psi_deg, use_simple_model=False):
 	"""
@@ -556,22 +567,85 @@ def run_multiple_plane_wave_simulations(output_filename):
 	# 結果をCSVファイルに書き出す
 	_write_sar_results_to_csv(all_sar_results, output_filename)
 
+# --- 単一シミュレーションを実行する新しい関数 ---
+def run_single_plane_wave_simulation(theta_deg, phi_deg, psi_deg, output_filename):
+	"""
+	指定された単一の角度と偏波で平面波シミュレーションを実行、解析します。
+
+	Args:
+		theta_deg (float): Z軸からの到来角度 (度)。
+		phi_deg (float): XY平面内での到来角度 (度)。
+		psi_deg (float): Eフィールドの偏波角度 (度)。
+		output_filename (str): SAR結果を書き込むCSVファイルのパス。
+	"""
+	_create_model()
+	model_name = _get_simulation_info_from_document()
+
+	print(f"--- Starting Single Simulation for Model: {model_name} ---")
+	print(f"INFO: Assumed model '{model_name}' is already loaded in Sim4Life.")
+
+	# 既存のシミュレーションを全て削除して、クリーンな状態にする
+	_delete_all_simulations_in_document()
+
+	# シミュレーション名と設定を構築
+	name_suffix = f"Theta_{theta_deg}_Phi_{phi_deg}_Psi_{psi_deg}"
+	sim_full_name = f"{model_name} - {name_suffix}"
+
+	print(f"Creating and running simulation: {sim_full_name}...")
+
+	# シミュレーションインスタンスを作成
+	sim_instance = _create_single_simulation_instance(sim_full_name, theta_deg, phi_deg, psi_deg)
+
+	if sim_instance is None:
+		print(f"ERROR: Failed to create simulation instance '{sim_full_name}'. Exiting.")
+		return
+
+	# S4Lドキュメントにシミュレーションを追加
+	document.AllSimulations.Add(sim_instance)
+
+	# グリッドとボクセルを更新
+	sim_instance.UpdateGrid()
+	sim_instance.CreateVoxels()
+
+	# シミュレーションを実行
+	sim_instance.RunSimulation(wait=True)
+	print(f"Finished running simulation: {sim_instance.Name}")
+
+	# 解析を実行
+	vwa_sar = _analyze_wbsar(sim_instance)
+	
+	# 結果をCSVに書き出す
+	if vwa_sar is not None:
+		sar_results = [{
+			'ModelName': model_name,
+			'SimulationName': sim_full_name,
+			'Direction': name_suffix,
+			'VWA_SAR': vwa_sar
+		}]
+		_write_sar_results_to_csv(sar_results, output_filename)
+	else:
+		print(f"WARNING: No SAR result to write for simulation: {sim_full_name}")
+
+	print("--- Single Simulation Finished ---")
+
 
 def main(data_path=None, project_dir=None):
 	import sys
 	import os
 	print("Python Version:", sys.version)
 
-	# デバッグモードのフラグ
-	# True に設定すると、シンプルなデバッグ用モデルが作成・使用されます。
-	# False に設定すると、Sim4Lifeにロードされている複雑な人体モデルが使用されます。
-	DEBUG_MODE_SIMPLE_MODEL = False
-	
-	# 出力ファイル名を指定
-	output_filename = "E:\Kusaskabe\wbsar_results.csv"
+	# 単一シミュレーション用の専用ファイル名を推奨
+	single_run_output_filename = "E:\Kusaskabe\wbsar_single_result.csv"
+	multi_run_output_filename = "E:\Kusaskabe\wbsar_results.csv"
 
-	# 複数の平面波シミュレーションを実行
-	run_multiple_plane_wave_simulations(output_filename)
+	# --- 以下の行を有効/無効にして、実行したいモードを切り替えてください ---
+	
+	# 単一のシミュレーションを実行する (デフォルト)
+	# 正面からの到来 (Phi=0度), 垂直偏波 (Psi=90度)
+	run_single_plane_wave_simulation(theta_deg=90.0, phi_deg=0.0, psi_deg=90.0, output_filename=single_run_output_filename)
+
+	# 複数のシミュレーションを実行する
+	# run_multiple_plane_wave_simulations(multi_run_output_filename)
 
 if __name__ == '__main__':
 	main()
