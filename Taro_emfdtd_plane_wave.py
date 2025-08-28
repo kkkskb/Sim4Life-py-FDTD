@@ -21,39 +21,14 @@ _CFILE = os.path.abspath(sys.argv[0] if __name__ == '__main__' else __file__ )
 _CDIR = os.path.dirname(_CFILE)
 
 # --- ここから、モデルエンティティを作成する関数 ---
-def _create_model(use_simple_model=False):
-	"""
-	シミュレーションに必要なモデルエンティティを作成します。
-	use_simple_model=Trueの場合、シンプルなデバッグ用ボックスとワイヤーを新規作成します。
-	use_simple_model=Falseの場合、既存のモデルエンティティがロードされていることを前提とし、何もしません。
-	"""
+def _create_model():
 	from s4l_v1.model import Vec3
 
-	if use_simple_model:
-		print("INFO: Creating simple debug model entities.")
-		# 既存のデバッグ用エンティティを削除してクリーンアップ
-		entities_to_delete_names = ["Debug Box", "Debug Source Wire"]
-		entities_to_delete = []
-		for name in entities_to_delete_names:
-			if name in model.AllEntities():
-				entities_to_delete.append(model.AllEntities()[name])
-		
-		if entities_to_delete:
-			for entity in entities_to_delete:
-				document.New()
-				print("INFO: Deleted existing debug model entities.")
+	wire = model.CreateWireBlock(p0=Vec3(-100,-100,-100), p1=Vec3(1800, 1800, 1800), parametrized=True)
+	wire.Name = 'Wire Block 1'
 
-		# シンプルなボックスとワイヤーを作成
-		# サイズは以前の例を参考に調整
-		wire = model.CreateWireBlock(p0=Vec3(-10, -10, -10), p1=Vec3(10, 10, 10), parametrized=True)
-		box = model.CreateSolidBlock(p0=Vec3(-50, -50, -50), p1=Vec3(50, 50, 50), parametrized=True)
-		
-		box.Name = 'Debug Box'
-		wire.Name = 'Debug Source Wire'
-		print("INFO: Debug Box and Debug Source Wire created.")
-	else:
-		# 既存のモデルエンティティがロードされていることを前提とするため、何もしない
-		pass
+	# 既存のモデルエンティティがロードされていることを前提とするため、何もしない
+	pass
 
 # --- ここから、単一シミュレーションインスタンス作成のためのヘルパー関数 ---
 def _create_single_simulation_instance(sim_name, theta_deg, phi_deg, psi_deg, use_simple_model=False):
@@ -491,7 +466,7 @@ def _delete_all_simulations_in_document():
 		print("No existing simulations to delete.")
 
 # --- ここから、複数シミュレーションを実行する新しい関数 ---
-def run_multiple_plane_wave_simulations(output_filename, use_simple_model=False):
+def run_multiple_plane_wave_simulations(output_filename):
 	"""
 	Creates, runs, and analyzes multiple plane wave simulations for a given model.
 	The plane wave arrival direction is varied for each simulation (12 directions in XY plane, vertical and horizontal polarization).
@@ -502,8 +477,8 @@ def run_multiple_plane_wave_simulations(output_filename, use_simple_model=False)
 								 If False, assumes complex anatomical model is loaded.
 	"""
 
-	# モデルを作成 (use_simple_modelフラグに基づいて切り替え)
-	_create_model(use_simple_model=use_simple_model)
+	# モデルを作成
+	_create_model()
 
 	model_name = _get_simulation_info_from_document() # モデル名を取得
 
@@ -572,7 +547,7 @@ def run_multiple_plane_wave_simulations(output_filename, use_simple_model=False)
 					'VWA_SAR': vwa_sar
 				})
 		else:
-			print(f"WARNING: Simulation '{sim_full_name}' not found for analysis.") # タイプミスを修正
+			print(f"WARNING: Simulation '{sim_full_name}' not found for analysis.")
 			
 
 	print("All simulations analyzed.")
@@ -596,7 +571,7 @@ def main(data_path=None, project_dir=None):
 	output_filename = "E:\Kusaskabe\wbsar_results.csv"
 
 	# 複数の平面波シミュレーションを実行
-	run_multiple_plane_wave_simulations(output_filename,  use_simple_model=DEBUG_MODE_SIMPLE_MODEL)
+	run_multiple_plane_wave_simulations(output_filename)
 
 if __name__ == '__main__':
 	main()
