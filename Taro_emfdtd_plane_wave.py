@@ -540,7 +540,7 @@ def run_multiple_plane_wave_simulations(output_filename):
 
 		if sim_to_run:
 			print(f"Running simulation: {sim_to_run.Name}...")
-			sim_to_run.RunSimulation(wait=True)
+			sim_to_run.RunSimulation(wait=False) # 解析完了を待たずにジョブの提出をする
 			print(f"Finished running simulation: {sim_to_run.Name}")
 		else:
 			print(f"WARNING: Simulation '{sim_full_name}' not found for execution.")
