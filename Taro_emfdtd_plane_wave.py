@@ -378,60 +378,59 @@ def _analyze_wbsar(sim):
     return mass_averaged_sar_value
 
 # --- SAR解析デバッグ用の関数 ---
-def debug_analyze_sar():
-    """
-    FDTD解析が完了している既存のシミュレーションに対してSAR解析を実行します。
-    開いているプロジェクト内の最初のシミュレーションを対象とします。
-    """
-    # 開いているドキュメントから最初のシミュレーションを取得
+def debug_analyze_sar(outptut_filename):
     sim_names = [sim.Name for sim in document.AllSimulations]
 
     if not sim_names:
         print(f"ERROR: No simulations found in the current document. Please load a project file with completed simulations.")
         return False
     
-    sim_to_analyze = document.AllSimulations[sim_names[0]]
+    sim_name = sim_names[0]
+    sim_to_analyze = document.AllSimulations[sim_name]
     
-    # _analyze_wbsar関数を呼び出して解析を実行
     print(f"\n--- Starting SAR analysis for: {sim_to_analyze.Name} ---")
     extracted_sar = _analyze_wbsar(sim_to_analyze)
 
     if extracted_sar is not None:
         print(f"\nSuccessfully extracted Mass-Averaged SAR: {extracted_sar} W/kg")
+        
+        # CSVファイルに結果を書き込む
+        model_name = _get_simulation_info_from_document()
+        doc_path = os.path.dirname(document.FileName) if document.FileName else _CDIR
+        output_filename = outptut_filename
+        
+        sar_results = [{
+            'ModelName': model_name,
+            'SimulationName': sim_name,
+            'Direction': sim_name.split(' - ')[-1] if ' - ' in sim_name else 'N/A',
+            'MassAveragedSAR': extracted_sar
+        }]
+        
+        _write_mass_averaged_sar_to_csv(sar_results, output_filename)
+        
         return True
     else:
         print("\nFailed to extract SAR value.")
         return False
 
 # --- SAR解析結果をCSVファイルに書き込む関数 ---
-def _write_sar_results_to_csv(results_list, filename):
-	"""
-	SAR解析結果のリストをCSVファイルに書き込みます。
-	ファイルが存在しない場合はヘッダー行を作成し、存在する場合はデータを追記します。
-	
-	出力情報に「モデル名」を追加しています。
+def _write_mass_averaged_sar_to_csv(results_list, filename):
+    """
+    SAR解析結果のリストをCSVファイルに書き込みます。
+    ファイルが存在しない場合はヘッダー行を作成し、存在する場合はデータを追記します。
+    """
+    file_exists = os.path.exists(filename)
+    
+    with open(filename, 'a' if file_exists else 'w', newline='', encoding='utf-8') as csvfile:
+        fieldnames = ['ModelName', 'SimulationName', 'Direction', 'MassAveragedSAR'] 
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
 
-	Args:
-		results_list (list): 各要素が辞書形式のSAR結果データを含むリスト。
-							 例: [{'ModelName': '...', 'SimulationName': '...', 'Direction': '...', 'VWA_SAR': ...}]
-		filename (str): 出力するCSVファイルのパスと名前。
-	"""
-	# ファイルが存在するかどうかを確認し、ヘッダーを書き込む必要があるかを判断
-	file_exists = os.path.exists(filename)
-	
-	# 'a' は追記モード、'w' は上書きモード
-	# newline='' はcsvモジュールで推奨される設定
-	with open(filename, 'a' if file_exists else 'w', newline='', encoding='utf-8') as csvfile:
-		# CSVの列名に'ModelName'を追加
-		fieldnames = ['ModelName', 'SimulationName', 'Direction', 'VWA_SAR'] 
-		writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        if not file_exists:
+            writer.writeheader()
 
-		if not file_exists:
-			writer.writeheader() # ファイルが新規作成された場合のみヘッダーを書き込む
-
-		for row in results_list:
-			writer.writerow(row)
-	print(f"\nResults successfully written to '{filename}'.")
+        for row in results_list:
+            writer.writerow(row)
+    print(f"\nResults successfully written to '{filename}'.")
 
 # --- モデル名とCSV出力ファイルパスを取得する関数 ---
 def _get_simulation_info_from_document():
@@ -643,7 +642,7 @@ def main(data_path=None, project_dir=None):
 	# --- 以下の行を有効/無効にして、実行したいモードを切り替えてください ---
 
 	# 既存のシミュレーションに対してSAR解析を実行するデバッグ用関数
-	debug_analyze_sar() 
+	debug_analyze_sar(single_run_output_filename) 
 
 	# 単一のシミュレーションを実行する (デフォルト)
 	# 正面からの到来 (Phi=0度), 垂直偏波 (Psi=90度)
