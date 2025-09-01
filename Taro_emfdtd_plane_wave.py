@@ -1,21 +1,24 @@
 from __future__ import absolute_import
 from __future__ import print_function
+
+# Python標準ライブラリ
 import sys, os
 import numpy as np
-import csv # CSVファイル操作のためにcsvモジュールをインポート
-import json # JSONデータを扱うためにjsonモジュールをインポート
+import csv
+import json
 
+# Sim4Life固有のライブラリ
 import s4l_v1.document as document
 import s4l_v1.model as model
 import s4l_v1.simulation.emfdtd as fdtd
 import s4l_v1.analysis as analysis
 import s4l_v1.analysis.core as analysis_core
 import s4l_v1.analysis.viewers as viewers
-import s4l_v1.materials.database as database # 材料データベースのインポートを有効化
-
+import s4l_v1.analysis.em_evaluators as em_evaluators # 追加
+import s4l_v1.materials.database as database
 import s4l_v1.units as units
-from s4l_v1 import ReleaseVersion # ReleaseVersionのインポート
-from s4l_v1 import Unit # Unitのインポート
+from s4l_v1 import ReleaseVersion
+from s4l_v1 import Unit
 
 _CFILE = os.path.abspath(sys.argv[0] if __name__ == '__main__' else __file__ )
 _CDIR = os.path.dirname(_CFILE)
@@ -276,16 +279,10 @@ def _analyze_wbsar(sim):
     指定されたシミュレーションの結果を解析し、
     「All Regions」の「Mass-Averaged SAR」値を抽出し表示します。
     """
-    import json
-    import s4l_v1.analysis.em_evaluators as em_evaluators
-    import s4l_v1.analysis.viewers as viewers
-    import s4l_v1.document as document
-
     print(f"Analysis results for: {sim.Name}")
 
     results = sim.Results()
     
-    # EMセンサーエクストラクターを作成し、電界データ(E-Field)を抽出
     if 'Overall Field' not in results:
         print(f"ERROR: Overall Field sensor not found for {sim.Name}.")
         return None
@@ -294,63 +291,118 @@ def _analyze_wbsar(sim):
     em_sensor_extractor.FrequencySettings.ExtractedFrequency = u"All"
     document.AllAlgorithms.Add(em_sensor_extractor)
 
-    # SarStatisticsEvaluator を作成し、SAR統計情報を計算
-    inputs_for_sar_statistics = [em_sensor_extractor.Outputs["EM E(x,y,z,f0)"]]
-    sar_statistics_evaluator = em_evaluators.SarStatisticsEvaluator(inputs=inputs_for_sar_statistics)
-    
-    sar_statistics_evaluator.PeakSpatialAverageSAR = True
-    sar_statistics_evaluator.UpdateAttributes()
-    document.AllAlgorithms.Add(sar_statistics_evaluator)
-
-    # 統計評価アルゴリズムの計算を強制的に実行
-    if not sar_statistics_evaluator.Update():
-        print(f"ERROR: SarStatisticsEvaluator '{sar_statistics_evaluator.Name}' failed to update/compute. Cannot extract SAR statistics.")
+    if "EM E(x,y,z,f0)" not in em_sensor_extractor.Outputs:
+        print(f"ERROR: 'EM E(x,y,z,f0)' output port not found in the Overall Field sensor.")
+        print("This indicates the FDTD simulation did not produce the necessary electric field data.")
         return None
 
-    # --- 「All Regions」の「Mass-Averaged SAR」値を取得 ---
+    em_field_output = em_sensor_extractor.Outputs["EM E(x,y,z,f0)"]
+    if em_field_output.Data is None:
+        print(f"ERROR: 'EM E(x,y,z,f0)' output data is None. The simulation results might be missing or incomplete.")
+        return None
+
+    inputs_for_sar_statistics = [em_field_output]
+    sar_statistics_evaluator_name = f"SAR Statistics for {sim.Name}"
+    if sar_statistics_evaluator_name in document.AllAlgorithms:
+        sar_statistics_evaluator = document.AllAlgorithms[sar_statistics_evaluator_name]
+        print(f"INFO: Found existing SarStatisticsEvaluator '{sar_statistics_evaluator_name}'.")
+    else:
+        sar_statistics_evaluator = em_evaluators.SarStatisticsEvaluator(inputs=inputs_for_sar_statistics)
+        sar_statistics_evaluator.Name = sar_statistics_evaluator_name
+        sar_statistics_evaluator.PeakSpatialAverageSAR = True
+        sar_statistics_evaluator.UpdateAttributes()
+        document.AllAlgorithms.Add(sar_statistics_evaluator)
+        print(f"INFO: Created new SarStatisticsEvaluator '{sar_statistics_evaluator_name}'.")
+
+    if not sar_statistics_evaluator.Update():
+        print(f"ERROR: SarStatisticsEvaluator '{sar_statistics_evaluator.Name}' failed to update/compute.")
+        return None
+    else:
+        print(f"INFO: SarStatisticsEvaluator '{sar_statistics_evaluator.Name}' successfully computed.")
+        if "SAR Statistics" in sar_statistics_evaluator.Outputs:
+            inputs_for_html_viewer = [sar_statistics_evaluator.Outputs["SAR Statistics"]]
+            data_table_html_viewer = viewers.DataTableHTMLViewer(inputs=inputs_for_html_viewer)
+            data_table_html_viewer.UpdateAttributes()
+            document.AllAlgorithms.Add(data_table_html_viewer)
+            print(f"INFO: DataTableHTMLViewer '{data_table_html_viewer.Name}' has been added to the document.")
+
     mass_averaged_sar_value = None
 
     try:
-        # 堅牢なチェックを追加
-        sar_statistics_output_ref = sar_statistics_evaluator.Outputs.get("SAR Statistics")
-        if sar_statistics_output_ref is None:
-            print("ERROR: 'SAR Statistics' output not found from SarStatisticsEvaluator.")
+        if "SAR Statistics" not in sar_statistics_evaluator.Outputs:
+            print("ERROR: 'SAR Statistics' output port not found.")
+            return None
+
+        sar_statistics_output_ref = sar_statistics_evaluator.Outputs["SAR Statistics"]
+        table_data_obj = sar_statistics_output_ref.Data
+
+        if table_data_obj is None:
+            print("ERROR: SarStatisticsEvaluator did not produce valid table data.")
             return None
         
-        json_data_object = sar_statistics_output_ref.Data
-        if json_data_object is None:
-            print("ERROR: SarStatisticsEvaluator did not produce valid data.")
+        # `ToList()` メソッドでテーブルをリストに変換
+        if hasattr(table_data_obj, 'ToList') and callable(table_data_obj.ToList):
+            table_list = table_data_obj.ToList()
+            
+            if not isinstance(table_list, list) or len(table_list) < 1:
+                print("WARNING: ToList() did not return a valid list with at least one data row.")
+                return None
+            
+            # `Mass-Averaged SAR` の列インデックスを目視で確認した `2` に固定
+            col_index = 2
+            
+            # `All Regions` 行はリストの最後の要素
+            row_index = -1
+            
+            if col_index < len(table_list[0]) and len(table_list) > 0:
+                last_row_values = table_list[row_index]
+                if isinstance(last_row_values, list) and col_index < len(last_row_values):
+                    mass_averaged_sar_value = last_row_values[col_index]
+                else:
+                    print("WARNING: Last row is not a list or column index is out of range.")
+            else:
+                print("WARNING: Could not extract value. Table is empty or column index is invalid.")
+        else:
+            print("ERROR: TableData object has no 'ToList' method.")
             return None
 
-        if hasattr(json_data_object, 'DataJson') and isinstance(json_data_object.DataJson, str):
-            parsed_data = json.loads(json_data_object.DataJson)
-
-            data_list = parsed_data.get("data_collection", {}).get("Mass-Averaged SAR", {}).get("data", [])
-            
-            if data_list:
-                mass_averaged_sar_value = data_list[-1]
-            else:
-                print("WARNING: 'Mass-Averaged SAR' data list is empty.")
-        else:
-            print("ERROR: JsonDataObject has no 'DataJson' attribute or 'DataJson' is not a string.")
-            
     except Exception as e:
         print(f"ERROR: An unexpected error occurred during data extraction: {e}")
-        
-    # 最終的な値が取得できたか確認
+        return None
+    
     if mass_averaged_sar_value is not None:
         print(f"Mass-Averaged SAR (All Regions) for '{sim.Name}': {mass_averaged_sar_value} W/kg")
     else:
         print(f"WARNING: 'Mass-Averaged SAR' value not found for {sim.Name}.")
 
-    # DataTableHTMLViewerの初期化と追加（GUI表示のため）
-    if 'sar_statistics_evaluator' in locals() and sar_statistics_evaluator.Outputs["SAR Statistics"].Data is not None:
-        inputs_for_html_viewer = [sar_statistics_evaluator.Outputs["SAR Statistics"]] 
-        data_table_html_viewer = viewers.DataTableHTMLViewer(inputs=inputs_for_html_viewer)
-        data_table_html_viewer.UpdateAttributes()
-        document.AllAlgorithms.Add(data_table_html_viewer)
-    
     return mass_averaged_sar_value
+
+# --- SAR解析デバッグ用の関数 ---
+def debug_analyze_sar():
+    """
+    FDTD解析が完了している既存のシミュレーションに対してSAR解析を実行します。
+    開いているプロジェクト内の最初のシミュレーションを対象とします。
+    """
+    # 開いているドキュメントから最初のシミュレーションを取得
+    sim_names = [sim.Name for sim in document.AllSimulations]
+
+    if not sim_names:
+        print(f"ERROR: No simulations found in the current document. Please load a project file with completed simulations.")
+        return False
+    
+    sim_to_analyze = document.AllSimulations[sim_names[0]]
+    
+    # _analyze_wbsar関数を呼び出して解析を実行
+    print(f"\n--- Starting SAR analysis for: {sim_to_analyze.Name} ---")
+    extracted_sar = _analyze_wbsar(sim_to_analyze)
+
+    if extracted_sar is not None:
+        print(f"\nSuccessfully extracted Mass-Averaged SAR: {extracted_sar} W/kg")
+        return True
+    else:
+        print("\nFailed to extract SAR value.")
+        return False
+
 # --- SAR解析結果をCSVファイルに書き込む関数 ---
 def _write_sar_results_to_csv(results_list, filename):
 	"""
@@ -589,10 +641,13 @@ def main(data_path=None, project_dir=None):
 	multi_run_output_filename = "E:\Kusaskabe\wbsar_results.csv"
 
 	# --- 以下の行を有効/無効にして、実行したいモードを切り替えてください ---
-	
+
+	# 既存のシミュレーションに対してSAR解析を実行するデバッグ用関数
+	debug_analyze_sar() 
+
 	# 単一のシミュレーションを実行する (デフォルト)
 	# 正面からの到来 (Phi=0度), 垂直偏波 (Psi=90度)
-	run_single_plane_wave_simulation(theta_deg=90.0, phi_deg=0.0, psi_deg=90.0, output_filename=single_run_output_filename)
+	#run_single_plane_wave_simulation(theta_deg=90.0, phi_deg=0.0, psi_deg=90.0, output_filename=single_run_output_filename)
 
 	# 複数のシミュレーションを実行する
 	# run_multiple_plane_wave_simulations(multi_run_output_filename)
