@@ -551,13 +551,13 @@ def run_multiple_plane_wave_simulations(output_filename):
 		sim_to_analyze = sim_map.get(sim_full_name)
 
 		if sim_to_analyze:
-			vwa_sar = _analyze_wbsar(sim_to_analyze)
-			if vwa_sar is not None:
+			extracted_sar = _analyze_wbsar(sim_to_analyze)
+			if extracted_sar is not None:
 				all_sar_results.append({
 					'ModelName': model_name,
 					'SimulationName': sim_full_name,
 					'Direction': name_suffix, # 方向名にPhi角度と偏波情報が含まれる
-					'VWA_SAR': vwa_sar
+            		'MassAveragedSAR': extracted_sar
 				})
 		else:
 			print(f"WARNING: Simulation '{sim_full_name}' not found for analysis.")
@@ -567,7 +567,7 @@ def run_multiple_plane_wave_simulations(output_filename):
 	print(f"--- Multiple Simulations Finished for Model: {model_name} ---")
 
 	# 結果をCSVファイルに書き出す
-	_write_sar_results_to_csv(all_sar_results, output_filename)
+	_write_mass_averaged_sar_to_csv(all_sar_results, output_filename)
 
 # --- 単一シミュレーションを実行する新しい関数 ---
 def run_single_plane_wave_simulation(theta_deg, phi_deg, psi_deg, output_filename):
@@ -624,7 +624,7 @@ def run_single_plane_wave_simulation(theta_deg, phi_deg, psi_deg, output_filenam
 			'Direction': name_suffix,
 			'VWA_SAR': vwa_sar
 		}]
-		_write_sar_results_to_csv(sar_results, output_filename)
+		_write_mass_averaged_sar_to_csv(sar_results, output_filename)
 	else:
 		print(f"WARNING: No SAR result to write for simulation: {sim_full_name}")
 
@@ -642,14 +642,14 @@ def main(data_path=None, project_dir=None):
 	# --- 以下の行を有効/無効にして、実行したいモードを切り替えてください ---
 
 	# 既存のシミュレーションに対してSAR解析を実行するデバッグ用関数
-	debug_analyze_sar(single_run_output_filename) 
+	#debug_analyze_sar(single_run_output_filename) 
 
 	# 単一のシミュレーションを実行する (デフォルト)
 	# 正面からの到来 (Phi=0度), 垂直偏波 (Psi=90度)
 	#run_single_plane_wave_simulation(theta_deg=90.0, phi_deg=0.0, psi_deg=90.0, output_filename=single_run_output_filename)
 
 	# 複数のシミュレーションを実行する
-	# run_multiple_plane_wave_simulations(multi_run_output_filename)
+	run_multiple_plane_wave_simulations(multi_run_output_filename)
 
 if __name__ == '__main__':
 	main()
