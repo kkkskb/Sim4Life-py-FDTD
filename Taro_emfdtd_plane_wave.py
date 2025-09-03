@@ -275,162 +275,161 @@ def _create_single_simulation_instance(sim_name, theta_deg, phi_deg, psi_deg, us
 
 # --- ここから、SAR解析のための関数 ---
 def _analyze_wbsar(sim):
-    """
-    指定されたシミュレーションの結果を解析し、
-    「All Regions」の「Mass-Averaged SAR」値を抽出し表示します。
-    """
-    print(f"Analysis results for: {sim.Name}")
+	"""
+	指定されたシミュレーションの結果を解析し、
+	「All Regions」の「Mass-Averaged SAR」値を抽出し表示します。
+	"""
+	print(f"Analysis results for: {sim.Name}")
 
-    results = sim.Results()
-    
-    if 'Overall Field' not in results:
-        print(f"ERROR: Overall Field sensor not found for {sim.Name}.")
-        return None
-        
-    em_sensor_extractor = results['Overall Field']
-    em_sensor_extractor.FrequencySettings.ExtractedFrequency = u"All"
-    document.AllAlgorithms.Add(em_sensor_extractor)
+	results = sim.Results()
+	
+	if 'Overall Field' not in results:
+		print(f"ERROR: Overall Field sensor not found for {sim.Name}.")
+		return None
+		
+	em_sensor_extractor = results['Overall Field']
+	em_sensor_extractor.FrequencySettings.ExtractedFrequency = u"All"
+	document.AllAlgorithms.Add(em_sensor_extractor)
 
-    if "EM E(x,y,z,f0)" not in em_sensor_extractor.Outputs:
-        print(f"ERROR: 'EM E(x,y,z,f0)' output port not found in the Overall Field sensor.")
-        print("This indicates the FDTD simulation did not produce the necessary electric field data.")
-        return None
+	if "EM E(x,y,z,f0)" not in em_sensor_extractor.Outputs:
+		print(f"ERROR: 'EM E(x,y,z,f0)' output port not found in the Overall Field sensor.")
+		print("This indicates the FDTD simulation did not produce the necessary electric field data.")
+		return None
 
-    em_field_output = em_sensor_extractor.Outputs["EM E(x,y,z,f0)"]
-    if em_field_output.Data is None:
-        print(f"ERROR: 'EM E(x,y,z,f0)' output data is None. The simulation results might be missing or incomplete.")
-        return None
+	em_field_output = em_sensor_extractor.Outputs["EM E(x,y,z,f0)"]
+	if em_field_output.Data is None:
+		print(f"ERROR: 'EM E(x,y,z,f0)' output data is None. The simulation results might be missing or incomplete.")
+		return None
 
-    inputs_for_sar_statistics = [em_field_output]
-    sar_statistics_evaluator_name = f"SAR Statistics for {sim.Name}"
-    if sar_statistics_evaluator_name in document.AllAlgorithms:
-        sar_statistics_evaluator = document.AllAlgorithms[sar_statistics_evaluator_name]
-        print(f"INFO: Found existing SarStatisticsEvaluator '{sar_statistics_evaluator_name}'.")
-    else:
-        sar_statistics_evaluator = em_evaluators.SarStatisticsEvaluator(inputs=inputs_for_sar_statistics)
-        sar_statistics_evaluator.Name = sar_statistics_evaluator_name
-        sar_statistics_evaluator.PeakSpatialAverageSAR = True
-        sar_statistics_evaluator.UpdateAttributes()
-        document.AllAlgorithms.Add(sar_statistics_evaluator)
-        print(f"INFO: Created new SarStatisticsEvaluator '{sar_statistics_evaluator_name}'.")
+	inputs_for_sar_statistics = [em_field_output]
+	sar_statistics_evaluator_name = f"SAR Statistics for {sim.Name}"
+	if sar_statistics_evaluator_name in document.AllAlgorithms:
+		sar_statistics_evaluator = document.AllAlgorithms[sar_statistics_evaluator_name]
+		print(f"INFO: Found existing SarStatisticsEvaluator '{sar_statistics_evaluator_name}'.")
+	else:
+		sar_statistics_evaluator = em_evaluators.SarStatisticsEvaluator(inputs=inputs_for_sar_statistics)
+		sar_statistics_evaluator.Name = sar_statistics_evaluator_name
+		sar_statistics_evaluator.PeakSpatialAverageSAR = True
+		sar_statistics_evaluator.UpdateAttributes()
+		document.AllAlgorithms.Add(sar_statistics_evaluator)
+		print(f"INFO: Created new SarStatisticsEvaluator '{sar_statistics_evaluator_name}'.")
 
-    if not sar_statistics_evaluator.Update():
-        print(f"ERROR: SarStatisticsEvaluator '{sar_statistics_evaluator.Name}' failed to update/compute.")
-        return None
-    else:
-        print(f"INFO: SarStatisticsEvaluator '{sar_statistics_evaluator.Name}' successfully computed.")
-        if "SAR Statistics" in sar_statistics_evaluator.Outputs:
-            inputs_for_html_viewer = [sar_statistics_evaluator.Outputs["SAR Statistics"]]
-            data_table_html_viewer = viewers.DataTableHTMLViewer(inputs=inputs_for_html_viewer)
-            data_table_html_viewer.UpdateAttributes()
-            document.AllAlgorithms.Add(data_table_html_viewer)
-            print(f"INFO: DataTableHTMLViewer '{data_table_html_viewer.Name}' has been added to the document.")
+	if not sar_statistics_evaluator.Update():
+		print(f"ERROR: SarStatisticsEvaluator '{sar_statistics_evaluator.Name}' failed to update/compute.")
+		return None
+	else:
+		print(f"INFO: SarStatisticsEvaluator '{sar_statistics_evaluator.Name}' successfully computed.")
+		if "SAR Statistics" in sar_statistics_evaluator.Outputs:
+			inputs_for_html_viewer = [sar_statistics_evaluator.Outputs["SAR Statistics"]]
+			data_table_html_viewer = viewers.DataTableHTMLViewer(inputs=inputs_for_html_viewer)
+			data_table_html_viewer.UpdateAttributes()
+			document.AllAlgorithms.Add(data_table_html_viewer)
+			print(f"INFO: DataTableHTMLViewer '{data_table_html_viewer.Name}' has been added to the document.")
 
-    mass_averaged_sar_value = None
+	mass_averaged_sar_value = None
 
-    try:
-        if "SAR Statistics" not in sar_statistics_evaluator.Outputs:
-            print("ERROR: 'SAR Statistics' output port not found.")
-            return None
+	try:
+		if "SAR Statistics" not in sar_statistics_evaluator.Outputs:
+			print("ERROR: 'SAR Statistics' output port not found.")
+			return None
 
-        sar_statistics_output_ref = sar_statistics_evaluator.Outputs["SAR Statistics"]
-        table_data_obj = sar_statistics_output_ref.Data
+		sar_statistics_output_ref = sar_statistics_evaluator.Outputs["SAR Statistics"]
+		table_data_obj = sar_statistics_output_ref.Data
 
-        if table_data_obj is None:
-            print("ERROR: SarStatisticsEvaluator did not produce valid table data.")
-            return None
-        
-        # `ToList()` メソッドでテーブルをリストに変換
-        if hasattr(table_data_obj, 'ToList') and callable(table_data_obj.ToList):
-            table_list = table_data_obj.ToList()
-            
-            if not isinstance(table_list, list) or len(table_list) < 1:
-                print("WARNING: ToList() did not return a valid list with at least one data row.")
-                return None
-            
-            # `Mass-Averaged SAR` の列インデックスを目視で確認した `2` に固定
-            col_index = 2
-            
-            # `All Regions` 行はリストの最後の要素
-            row_index = -1
-            
-            if col_index < len(table_list[0]) and len(table_list) > 0:
-                last_row_values = table_list[row_index]
-                if isinstance(last_row_values, list) and col_index < len(last_row_values):
-                    mass_averaged_sar_value = last_row_values[col_index]
-                else:
-                    print("WARNING: Last row is not a list or column index is out of range.")
-            else:
-                print("WARNING: Could not extract value. Table is empty or column index is invalid.")
-        else:
-            print("ERROR: TableData object has no 'ToList' method.")
-            return None
+		if table_data_obj is None:
+			print("ERROR: SarStatisticsEvaluator did not produce valid table data.")
+			return None
+		
+		# `ToList()` メソッドでテーブルをリストに変換
+		if hasattr(table_data_obj, 'ToList') and callable(table_data_obj.ToList):
+			table_list = table_data_obj.ToList()
+			
+			if not isinstance(table_list, list) or len(table_list) < 1:
+				print("WARNING: ToList() did not return a valid list with at least one data row.")
+				return None
+			
+			# `Mass-Averaged SAR` の列インデックスを目視で確認した `2` に固定
+			col_index = 2
+			
+			# `All Regions` 行はリストの最後の要素
+			row_index = -1
+			
+			if col_index < len(table_list[0]) and len(table_list) > 0:
+				last_row_values = table_list[row_index]
+				if isinstance(last_row_values, list) and col_index < len(last_row_values):
+					mass_averaged_sar_value = last_row_values[col_index]
+				else:
+					print("WARNING: Last row is not a list or column index is out of range.")
+			else:
+				print("WARNING: Could not extract value. Table is empty or column index is invalid.")
+		else:
+			print("ERROR: TableData object has no 'ToList' method.")
+			return None
 
-    except Exception as e:
-        print(f"ERROR: An unexpected error occurred during data extraction: {e}")
-        return None
-    
-    if mass_averaged_sar_value is not None:
-        print(f"Mass-Averaged SAR (All Regions) for '{sim.Name}': {mass_averaged_sar_value} W/kg")
-    else:
-        print(f"WARNING: 'Mass-Averaged SAR' value not found for {sim.Name}.")
+	except Exception as e:
+		print(f"ERROR: An unexpected error occurred during data extraction: {e}")
+		return None
+	
+	if mass_averaged_sar_value is not None:
+		print(f"Mass-Averaged SAR (All Regions) for '{sim.Name}': {mass_averaged_sar_value} W/kg")
+	else:
+		print(f"WARNING: 'Mass-Averaged SAR' value not found for {sim.Name}.")
 
-    return mass_averaged_sar_value
+	return mass_averaged_sar_value
 
 # --- SAR解析デバッグ用の関数 ---
-def debug_analyze_sar(outptut_filename):
-    sim_names = [sim.Name for sim in document.AllSimulations]
+def debug_analyze_sar(output_dir):
+	sim_names = [sim.Name for sim in document.AllSimulations]
 
-    if not sim_names:
-        print(f"ERROR: No simulations found in the current document. Please load a project file with completed simulations.")
-        return False
-    
-    sim_name = sim_names[0]
-    sim_to_analyze = document.AllSimulations[sim_name]
-    
-    print(f"\n--- Starting SAR analysis for: {sim_to_analyze.Name} ---")
-    extracted_sar = _analyze_wbsar(sim_to_analyze)
+	if not sim_names:
+		print(f"ERROR: No simulations found in the current document. Please load a project file with completed simulations.")
+		return False
+	
+	sim_name = sim_names[0]
+	sim_to_analyze = document.AllSimulations[sim_name]
+	
+	print(f"\n--- Starting SAR analysis for: {sim_to_analyze.Name} ---")
+	extracted_sar = _analyze_wbsar(sim_to_analyze)
 
-    if extracted_sar is not None:
-        print(f"\nSuccessfully extracted Mass-Averaged SAR: {extracted_sar} W/kg")
-        
-        # CSVファイルに結果を書き込む
-        model_name = _get_simulation_info_from_document()
-        doc_path = os.path.dirname(document.FileName) if document.FileName else _CDIR
-        output_filename = outptut_filename
-        
-        sar_results = [{
-            'ModelName': model_name,
-            'SimulationName': sim_name,
-            'Direction': sim_name.split(' - ')[-1] if ' - ' in sim_name else 'N/A',
-            'MassAveragedSAR': extracted_sar
-        }]
-        
-        _write_mass_averaged_sar_to_csv(sar_results, output_filename)
-        
-        return True
-    else:
-        print("\nFailed to extract SAR value.")
-        return False
+	if extracted_sar is not None:
+		print(f"\nSuccessfully extracted Mass-Averaged SAR: {extracted_sar} W/kg")
+		
+		# CSVファイルに結果を書き込む
+		model_name = _get_simulation_info_from_document()
+		output_filename = os.path.join(output_dir, f"{model_name}_single_wbsar_results.csv")
+		
+		sar_results = [{
+			'ModelName': model_name,
+			'SimulationName': sim_name,
+			'Direction': sim_name.split(' - ')[-1] if ' - ' in sim_name else 'N/A',
+			'MassAveragedSAR': extracted_sar
+		}]
+		
+		_write_mass_averaged_sar_to_csv(sar_results, output_filename)
+		
+		return True
+	else:
+		print("\nFailed to extract SAR value.")
+		return False
 
 # --- SAR解析結果をCSVファイルに書き込む関数 ---
 def _write_mass_averaged_sar_to_csv(results_list, filename):
-    """
-    SAR解析結果のリストをCSVファイルに書き込みます。
-    ファイルが存在しない場合はヘッダー行を作成し、存在する場合はデータを追記します。
-    """
-    file_exists = os.path.exists(filename)
-    
-    with open(filename, 'a' if file_exists else 'w', newline='', encoding='utf-8') as csvfile:
-        fieldnames = ['ModelName', 'SimulationName', 'Direction', 'MassAveragedSAR'] 
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+	"""
+	SAR解析結果のリストをCSVファイルに書き込みます。
+	ファイルが存在しない場合はヘッダー行を作成し、存在する場合はデータを追記します。
+	"""
+	file_exists = os.path.exists(filename)
+	
+	with open(filename, 'a' if file_exists else 'w', newline='', encoding='utf-8') as csvfile:
+		fieldnames = ['ModelName', 'SimulationName', 'Direction', 'MassAveragedSAR'] 
+		writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
 
-        if not file_exists:
-            writer.writeheader()
+		if not file_exists:
+			writer.writeheader()
 
-        for row in results_list:
-            writer.writerow(row)
-    print(f"\nResults successfully written to '{filename}'.")
+		for row in results_list:
+			writer.writerow(row)
+	print(f"\nResults successfully written to '{filename}'.")
 
 # --- モデル名とCSV出力ファイルパスを取得する関数 ---
 def _get_simulation_info_from_document():
@@ -478,40 +477,41 @@ def _delete_all_simulations_in_document():
 	else:
 		print("No existing simulations to delete.")
 
-# --- ここから、複数シミュレーションを実行する新しい関数 ---
-def run_multiple_plane_wave_simulations(output_filename):
+# --- 複数シミュレーションを実行する関数 ---
+def run_multiple_plane_wave_simulations(polarization_type, angle_step_deg, output_dir):
 	"""
 	Creates, runs, and analyzes multiple plane wave simulations for a given model.
-	The plane wave arrival direction is varied for each simulation (12 directions in XY plane, vertical and horizontal polarization).
-
-	Args:
-		output_filename (str): The name of the output CSV file.
-		use_simple_model (bool): If True, creates and uses simple debug model entities.
-								 If False, assumes complex anatomical model is loaded.
 	"""
-
-	# モデルを作成
 	_create_model()
-
-	model_name = _get_simulation_info_from_document() # モデル名を取得
+	model_name = _get_simulation_info_from_document()
 
 	print(f"--- Starting Multiple Simulations for Model: {model_name} ---")
 	print(f"INFO: Assumed model '{model_name}' is already loaded in Sim4Life.")
 
-	# 既存のシミュレーションを削除
 	_delete_all_simulations_in_document()
 
-	# 平面波の到来方向と偏波の設定リスト (XY平面上を30度おきの計12方向 x 2偏波)
-	# 各タプルは (シミュレーション名サフィックス, Theta角[度], Phi角[度], Psi角[度]) を表します。
-	# Theta: Z軸からの角度（990度はXY平面上）
-	# Phi: XY平面内でX軸からの角度（反時計回り）
-	# Psi: Eフィールドの偏波角度 (90.0: 垂直偏波, 0.0: 水平偏波)
 	simulation_configs = []
-	polarizations = {"VPol": 90.0, "HPol": 0.0} # 偏波タイプと対応するPsi角度の辞書
+	
+	if polarization_type == 'Both':
+		polarizations = {"VPol": 90.0, "HPol": 0.0}
+	elif polarization_type == 'VPol':
+		polarizations = {"VPol": 90.0}
+	elif polarization_type == 'HPol':
+		polarizations = {"HPol": 0.0}
+	else:
+		print(f"ERROR: Invalid polarization_type '{polarization_type}'. Using Both.")
+		polarizations = {"VPol": 90.0, "HPol": 0.0}
+
+	# シミュレーションを回す角度のリスト
+	if angle_step_deg > 0:
+		phi_angles = range(0, 360, angle_step_deg)
+	else:
+		print("WARNING: Invalid angle_step_deg. Defaulting to 30 degrees.")
+		phi_angles = range(0, 360, 30)
 
 	for pol_name, psi_angle in polarizations.items():
-		for phi_angle in range(0, 360, 30): # 0, 30, ..., 330
-			name_suffix = f"Phi_{phi_angle:03d}_{pol_name}" # 例: "Phi_000_VPol", "Phi_030_HPol"
+		for phi_angle in phi_angles:
+			name_suffix = f"Phi_{phi_angle:03d}_{pol_name}"
 			simulation_configs.append((name_suffix, 90.0, float(phi_angle), psi_angle))
 
 	all_sar_results = []
@@ -540,7 +540,7 @@ def run_multiple_plane_wave_simulations(output_filename):
 
 		if sim_to_run:
 			print(f"Running simulation: {sim_to_run.Name}...")
-			sim_to_run.RunSimulation(wait=False) # 解析完了を待たずにジョブの提出をする
+			sim_to_run.RunSimulation(wait=True)
 			print(f"Finished running simulation: {sim_to_run.Name}")
 		else:
 			print(f"WARNING: Simulation '{sim_full_name}' not found for execution.")
@@ -556,17 +556,16 @@ def run_multiple_plane_wave_simulations(output_filename):
 				all_sar_results.append({
 					'ModelName': model_name,
 					'SimulationName': sim_full_name,
-					'Direction': name_suffix, # 方向名にPhi角度と偏波情報が含まれる
-            		'MassAveragedSAR': extracted_sar
+					'Direction': name_suffix,
+					'MassAveragedSAR': extracted_sar
 				})
 		else:
 			print(f"WARNING: Simulation '{sim_full_name}' not found for analysis.")
 			
-
 	print("All simulations analyzed.")
 	print(f"--- Multiple Simulations Finished for Model: {model_name} ---")
 
-	# 結果をCSVファイルに書き出す
+	output_filename = os.path.join(output_dir, f"{model_name}_multi_wbsar_results.csv")
 	_write_mass_averaged_sar_to_csv(all_sar_results, output_filename)
 
 # --- 単一シミュレーションを実行する新しい関数 ---
@@ -636,20 +635,18 @@ def main(data_path=None, project_dir=None):
 	print("Python Version:", sys.version)
 
 	# 単一シミュレーション用の専用ファイル名を推奨
-	single_run_output_filename = "E:\Kusaskabe\wbsar_single_result.csv"
-	multi_run_output_filename = "E:\Kusaskabe\wbsar_results.csv"
-
-	# --- 以下の行を有効/無効にして、実行したいモードを切り替えてください ---
+	output_dir = "E:\Kusaskabe\wbsar_results"
+	polarization_type = 'VPol'  # 'Both', 'VPol', 'HPol' のいずれか
+	angle_step_deg = 360  # 0 < angle_step_deg <= 360 の範囲で指定
 
 	# 既存のシミュレーションに対してSAR解析を実行するデバッグ用関数
-	#debug_analyze_sar(single_run_output_filename) 
+	#debug_analyze_sar(output_dir) 
 
-	# 単一のシミュレーションを実行する (デフォルト)
-	# 正面からの到来 (Phi=0度), 垂直偏波 (Psi=90度)
+	# 単一のシミュレーションを実行する
 	#run_single_plane_wave_simulation(theta_deg=90.0, phi_deg=0.0, psi_deg=90.0, output_filename=single_run_output_filename)
 
 	# 複数のシミュレーションを実行する
-	run_multiple_plane_wave_simulations(multi_run_output_filename)
+	run_multiple_plane_wave_simulations(polarization_type, angle_step_deg, output_dir)
 
 if __name__ == '__main__':
 	main()
